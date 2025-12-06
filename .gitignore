@@ -1,0 +1,9 @@
+cmake-build-windows-visualstudio
+libs
+kit
+*.exe
+*.dll
+*.so
+.idea
+third_party
+qbdi-src\.idea
