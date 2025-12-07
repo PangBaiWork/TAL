@@ -56,25 +56,6 @@ void print_qbdi_reg(QBDI::GPRState *state) {
 
 }
 void syn_reg_gum(GumCpuContext *cpu, QBDI::GPRState *state, bool F2Q) {
-    // guint64 rip;
-    //
-    // guint64 r15;
-    // guint64 r14;
-    // guint64 r13;
-    // guint64 r12;
-    // guint64 r11;
-    // guint64 r10;
-    // guint64 r9;
-    // guint64 r8;
-    //
-    // guint64 rdi;
-    // guint64 rsi;
-    // guint64 rbp;
-    // guint64 rsp;
-    // guint64 rbx;
-    // guint64 rdx;
-    // guint64 rcx;
-    // guint64 rax;
     if (F2Q) {
 
         SET_QBDI(r8);
@@ -120,212 +101,167 @@ void syn_reg_gum(GumCpuContext *cpu, QBDI::GPRState *state, bool F2Q) {
 }
 
 bool isTraceAll = false;
-// QBDI::VM *qvm;
-HOOK_DEF(QBDI::rword, gum_handle) {
-    LOGS("begin");
-    clock_t start,end;
-    start = clock();
-    auto context = gum_interceptor_get_current_invocation();
-    auto interceptor = (GumInterceptor *) gum_invocation_context_get_replacement_data(context);
-    gum_interceptor_revert(interceptor, context->function);
-    gum_interceptor_flush(interceptor);
-    // auto vm_ = new vm();
-    // vm_->
-    auto qvm = init(context->function,isTraceAll);
-    auto state = qvm.getGPRState();
-    syn_reg_gum(context->cpu_context, state, true);
-    uint8_t *fakestack;
-    QBDI::allocateVirtualStack(state, STACK_SIZE, &fakestack);
-    QBDI::rword ret;
-    qvm.switchStackAndCall(&ret, (QBDI::rword) context->function);
-    syn_reg_gum(context->cpu_context, state, false);
-    end = clock();
-    LOGS("time: %f",(double)(end-start)/CLOCKS_PER_SEC);
-    LOGS("end");
-    return ret;
-}
 
 MemoryRange *taintMemory=nullptr;
 PRINT_MODE g_print_mode=ADDR_MODE;
 string *log_path=nullptr;
 uint64_t g_base=0;
 GumCpuContext g_cpu_context;
-gpointer g_function;
+void* g_function;
 GumInvocationListener *g_listener=nullptr;
 GumInterceptor  *g_interceptor=nullptr;
-char * g_taint_str=nullptr;
-#define FAKE_RET_ADDR 42
-HOOK_DEF(QBDI::rword, taint_gum_handle) {
-    unsigned long long rspvalue;
-    auto context = gum_interceptor_get_current_invocation();
-    print_reg(context->cpu_context);
-    auto interceptor = (GumInterceptor *) gum_invocation_context_get_replacement_data(context);
-    gum_interceptor_revert(interceptor, context->function);
-    gum_interceptor_flush(interceptor);
 
+char * g_taint_str=nullptr;
+
+#define FAKE_RET_ADDR 42
+// HOOK_DEF(QBDI::rword, taint_gum_handle) {
+//     unsigned long long rspvalue;
+//     auto context = gum_interceptor_get_current_invocation();
+//     print_reg(context->cpu_context);
+//     auto interceptor = (GumInterceptor *) gum_invocation_context_get_replacement_data(context);
+//     gum_interceptor_revert(interceptor, context->function);
+//     gum_interceptor_flush(interceptor);
+//
+//     memcpy(&g_cpu_context,context->cpu_context,sizeof(GumCpuContext));
+//     g_function=context->function;
+//
+// #ifndef  QBDI_PLATFORM_WINDOWS
+//     asm volatile (
+//         "movq %%rbp, %0\n"     // 将RSP的值移动到rsp_value中
+//          "andq $-16, %%rsp\n"   // 对齐RSP到16字节
+//          "andq $-16, %%rbp\n"   // 对齐RSP到16字节
+//         : "=r"(rspvalue)      // 输出操作数
+//         :                      // 无输入操作数
+//         : "rsp", "memory" // 告知编译器被修改的寄存器
+//     );
+//     // Print the register value
+//     std::cout << "replace rbp: " << toHex(rspvalue) << std::endl;
+// #endif
+//
+//     LOGS("begin");
+//     clock_t start,end;
+//     start = clock();
+//     auto qvm = init(g_function,isTraceAll,nullptr,g_print_mode);
+//     auto state = qvm.getGPRState();
+//     syn_reg_gum(&g_cpu_context, state, true);
+//     LOGD("fun:%p",g_function);
+//
+//     qvm.run(reinterpret_cast<QBDI::rword>(g_function),FAKE_RET_ADDR);
+//     syn_reg_gum(&g_cpu_context, state, false);
+//     end = clock();
+//     LOGS("time: %f",(double)(end-start)/CLOCKS_PER_SEC);
+//     LOGS("end");
+//     return 0;
+// }
+//
+//
+
+// balance for stack
+// #ifndef  QBDI_PLATFORM_WINDOWS
+// asm volatile (
+//     "movq %%rbp, %0\n"     // 将RSP的值移动到rsp_value中
+//     "movq %%rsp, %1\n"
+//      "andq $-8, %%rsp\n"   // 对齐RSP到16字节
+//      "andq $-8, %%rbp\n"   // 对齐RSP到16字节
+//     : "=r"(rbpvalue) ,"=r"(rspvalue)     // 输出操作数
+//     :                      // 无输入操作数
+//     : "rsp", "memory" // 告知编译器被修改的寄存器
+// );
+//
+//
+// // Print the register value
+// std::cout << "replace rsp: " << toHex(rspvalue) << std::endl;
+// std::cout << "replace rbp: " << toHex(rbpvalue) << std::endl;
+// #endif
+
+
+static void on_enter(GumInvocationContext *context, gpointer user_data) {
+    unsigned long long rspvalue;
+    unsigned long long rbpvalue;
+    print_reg(context->cpu_context);
+    LOGS("begin");
     memcpy(&g_cpu_context,context->cpu_context,sizeof(GumCpuContext));
     g_function=context->function;
+    gum_interceptor_detach(g_interceptor,g_listener);
+    // Use inline assembly to move the content of RAX into the variable
 
-#ifndef  QBDI_PLATFORM_WINDOWS
-    asm volatile (
-        "movq %%rbp, %0\n"     // 将RSP的值移动到rsp_value中
-         "andq $-16, %%rsp\n"   // 对齐RSP到16字节
-         "andq $-16, %%rbp\n"   // 对齐RSP到16字节
-        : "=r"(rspvalue)      // 输出操作数
-        :                      // 无输入操作数
-        : "rsp", "memory" // 告知编译器被修改的寄存器
-    );
-    // Print the register value
-    std::cout << "replace rbp: " << toHex(rspvalue) << std::endl;
-#endif
+    clock_t start = clock();
 
-    LOGS("begin");
-    clock_t start,end;
-    start = clock();
-    auto qvm = init(g_function,isTraceAll,nullptr,&g_print_mode);
+    GumModule* module = gum_process_find_module_by_address((GumAddress)g_function);
+    uint64_t base_addr = gum_module_get_range(module)->base_address;
+    LOGE("Base:%llx",base_addr);
+    auto *taintTrace = new TaintTrace(log_path, base_addr,g_print_mode);
+
+    if (taintMemory!=nullptr)
+        taintTrace->addTaintMemory(*taintMemory);
+    else {
+        taintTrace->setTaintStr(g_taint_str);
+    }
+
+    QBDI::setLogPriority(QBDI::DEBUG);
+    QBDI::setLogFile("log.asm",true);
+    QBDI::VM qvm = init(g_function,g_print_mode,isTraceAll,taintTrace);
+    //qvm.setOptions(QBDI::OPT_ENABLE_FS_GS);
+
+
+    LOGE("gs: %x,fs:%x",get_fs_selector(),get_gs_selector());
+
     auto state = qvm.getGPRState();
     syn_reg_gum(&g_cpu_context, state, true);
-    QBDI::rword ret;
-    LOGD("fun:%p",g_function);
-#define FAKE_RET_ADDR 42
-    qvm.run((QBDI::rword) g_function,FAKE_RET_ADDR);
+    state->fs=get_fs_selector();
+    state->gs=get_gs_selector();
+
+    qvm.run(reinterpret_cast<QBDI::rword>(g_function),FAKE_RET_ADDR);
     syn_reg_gum(&g_cpu_context, state, false);
-    end = clock();
+    clock_t end = clock();
     LOGS("time: %f",(double)(end-start)/CLOCKS_PER_SEC);
     LOGS("end");
-    return ret;
+    printf("[*] Function entered! user_data=%s\n", (char *)user_data);
+}
+
+VISIBILITY_DEFAULT   void taint_trace(void *addr,bool trace_all,uint64_t taintAddr,int taintSize,int printMode) {
+    isTraceAll = trace_all;
+    LOGD("taint: %llx size:%d", taintAddr,taintSize);
+    LOGD("hooking %p", addr);
+    g_print_mode=static_cast<PRINT_MODE>(printMode);
+    taintMemory = new MemoryRange(taintAddr,taintAddr + taintSize);
+    g_interceptor = gum_interceptor_obtain();
+    g_listener = hookUtils::gum_attach(g_interceptor,addr, on_enter,nullptr, nullptr);
+    LOGE("hooked");
+}
+
+VISIBILITY_DEFAULT   void taint_trace_str(void *addr,bool trace_all,char *taint_str,int printMode) {
+    isTraceAll = trace_all;
+    LOGD("taint string: %s", taint_str);
+    LOGD("hooking %p", addr);
+    g_print_mode=static_cast<PRINT_MODE>(printMode);
+    g_taint_str = new char[strlen(taint_str)+1];
+    strcpy(g_taint_str,taint_str);
+    g_interceptor = gum_interceptor_obtain();
+    g_listener = hookUtils::gum_attach(g_interceptor,addr, on_enter,nullptr, nullptr);
+    LOGE("hooked");
 }
 
 
-    VISIBILITY_DEFAULT void attd_trace(void *addr,bool trace_all) {
-        isTraceAll = trace_all;
-        LOGD("hooking %p", addr);
-        hookUtils::gum_replace(addr, (void *) new_gum_handle, (void **) (&orig_gum_handle));
-    }
-
-    //  VISIBILITY_DEFAULT   void taint_trace(void *addr,bool trace_all,uint64_t taintAddr,int taintSize,int printMode) {
-    //         isTraceAll = trace_all;
-    //
-    //
-    //         LOGD("taint: %llx size:%d", taintAddr,taintSize);
-    //         LOGD("hooking %p", addr);
-    //         g_print_mode=static_cast<PRINT_MODE>(printMode);
-    //         taintMemory = new MemoryRange(taintAddr,taintAddr + taintSize);
-    //         hookUtils::gum_replace(addr, (void *) new_taint_gum_handle, (void **) (&orig_gum_handle));
-    //         LOGE("hooked");
-    // }
-    static void on_enter(GumInvocationContext *context, gpointer user_data) {
-        unsigned long long rspvalue;
-        unsigned long long rbpvalue;
-        print_reg(context->cpu_context);
-        LOGS("begin");
-        memcpy(&g_cpu_context,context->cpu_context,sizeof(GumCpuContext));
-        g_function=context->function;
-        gum_interceptor_detach(g_interceptor,g_listener);
-        // Use inline assembly to move the content of RAX into the variable
-#ifndef  QBDI_PLATFORM_WINDOWS
-        asm volatile (
-            "movq %%rbp, %0\n"     // 将RSP的值移动到rsp_value中
-            "movq %%rsp, %1\n"
-             "andq $-8, %%rsp\n"   // 对齐RSP到16字节
-             "andq $-8, %%rbp\n"   // 对齐RSP到16字节
-            : "=r"(rbpvalue) ,"=r"(rspvalue)     // 输出操作数
-            :                      // 无输入操作数
-            : "rsp", "memory" // 告知编译器被修改的寄存器
-        );
-
-
-        // Print the register value
-        std::cout << "replace rsp: " << toHex(rspvalue) << std::endl;
-        std::cout << "replace rbp: " << toHex(rbpvalue) << std::endl;
-#endif
-        clock_t start,end;
-        start = clock();
-
-        GumModule* module =(GumModule*) gum_process_find_module_by_address((GumAddress)g_function);
-        uint64_t base_addr = gum_module_get_range(module)->base_address;
-        LOGE("Base:%llx",base_addr);
-        TaintTrace *taintTrace = new TaintTrace(log_path, base_addr,g_print_mode);
-        if (taintMemory!=nullptr)
-            taintTrace->addTaintMemory(*taintMemory);
-        else {
-            // LOGE("g_taint_str %s",g_taint_str);
-            taintTrace->setTaintStr(g_taint_str);
-        }
-        QBDI::setLogPriority(QBDI::DEBUG);
-        QBDI::setLogFile("log.asm",true);
-        QBDI::VM qvm = init(g_function,isTraceAll,taintTrace,&g_print_mode);
-        //qvm.setOptions(QBDI::OPT_ENABLE_FS_GS);
-        //qvm.setOptions(QBDI::OPT_ENABLE_FS_GS);
-
-
-        LOGE("gs: %x,fs:%x",get_fs_selector(),get_gs_selector());
-        auto state = qvm.getGPRState();
-        syn_reg_gum(&g_cpu_context, state, true);
-        state->fs=get_fs_selector();
-        state->gs=get_gs_selector();
-        QBDI::rword ret;
-        LOGD("fun:%p",g_function);
-        qvm.run((QBDI::rword) g_function,FAKE_RET_ADDR);
-
-        syn_reg_gum(&g_cpu_context, state, false);
-
-        end = clock();
-        LOGS("time: %f",(double)(end-start)/CLOCKS_PER_SEC);
-        LOGS("end");
-        printf("[*] Function entered! user_data=%s\n", (char *)user_data);
-    }
-
-    VISIBILITY_DEFAULT   void taint_trace(void *addr,bool trace_all,uint64_t taintAddr,int taintSize,int printMode) {
-        isTraceAll = trace_all;
-        LOGD("taint: %llx size:%d", taintAddr,taintSize);
-        LOGD("hooking %p", addr);
-        g_print_mode=static_cast<PRINT_MODE>(printMode);
-        taintMemory = new MemoryRange(taintAddr,taintAddr + taintSize);
-        g_interceptor = gum_interceptor_obtain();
-        g_listener = hookUtils::gum_attach(g_interceptor,addr, on_enter,nullptr, (void **) (&orig_taint_gum_handle));
-        LOGE("hooked");
-    }
-
-    VISIBILITY_DEFAULT   void taint_trace_str(void *addr,bool trace_all,char *taint_str,int printMode) {
-        isTraceAll = trace_all;
-        // LOGD("taint: %llx size:%d", taintAddr,taintSize);
-        LOGD("taint string: %s", taint_str);
-        LOGD("hooking %p", addr);
-        g_print_mode=static_cast<PRINT_MODE>(printMode);
-        // taintMemory = new MemoryRange(taintAddr,taintAddr + taintSize);
-        g_taint_str = new char[strlen(taint_str)+1];
-        strcpy(g_taint_str,taint_str);
-        g_interceptor = gum_interceptor_obtain();
-        g_listener = hookUtils::gum_attach(g_interceptor,addr, on_enter,nullptr, (void **) (&orig_taint_gum_handle));
-        LOGE("hooked");
-    }
-
-
-    VISIBILITY_DEFAULT   void attd_call(void *target_addr) {
-        LOGS("attd_call start %p", target_addr);
-        uint8_t *fakestack;
-        // auto vm_ = new vm();
-        // vm_->
-        auto qvm = init(target_addr);
-        auto state = qvm.getGPRState();
-        QBDI::allocateVirtualStack(state, STACK_SIZE, &fakestack);
-        QBDI::rword ret;
-        qvm.call(&ret, (QBDI::rword) target_addr);
-        LOGS("attd_call end %p", target_addr);
-    }
+// VISIBILITY_DEFAULT   void attd_call(void *target_addr) {
+//     LOGS("attd_call start %p", target_addr);
+//     uint8_t *fakestack;
+//     auto qvm = init(target_addr);
+//     auto state = qvm.getGPRState();
+//     QBDI::allocateVirtualStack(state, STACK_SIZE, &fakestack);
+//     QBDI::rword ret;
+//     qvm.call(&ret, (QBDI::rword) target_addr);
+//     LOGS("attd_call end %p", target_addr);
+// }
 
 
 CONSTRUCTOR_ATTR void init_main() {
-
     gum_init_embedded();
     LOGE("load ok");
 }
 
 #ifdef  QBDI_PLATFORM_WINDOWS
-
 #include <windows.h>
-
 BOOL APIENTRY DllMain(HMODULE hModule,
                       DWORD  ul_reason_for_call,
                       LPVOID lpReserved)

@@ -22,6 +22,7 @@ enum PRINT_MODE
     ADDR_MODE = 0,
     ASM_MODE = 1,
     DEBUG_MODE = 2,
+    TRACE_MODE = 3,
 };
 using  namespace  std;
 class TaintTrace{
