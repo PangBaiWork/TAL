@@ -2,19 +2,18 @@
 // Created by pangbai on 25-10-14.
 //
 
-
-
-#include <iostream>
-#include "frida-gum.h"
-#include <cassert>
-#include <sstream>
-#include "QBDI.h"
 #include "vm.h"
+
+#include <cassert>
+#include <iostream>
+#include <sstream>
+
+#include "QBDI.h"
+#include "frida-gum.h"
+#include "library.h"
+#include "taint_analyze.h"
+#include "taint_utils.h"
 #include "utils.h"
-
-#include "taintAnalyze.h"
-#include "taintUtils.h"
-
 
 using namespace std;
 using namespace QBDI;
@@ -23,8 +22,12 @@ using namespace QBDI;
 
 
 VMAction postInstruction(VM *vm, GPRState *gprState, FPRState *fprState, void *data) {
-    auto extend_data = (extends *) data;
-    extend_data->taintTrace->postInstTrace(vm, gprState, fprState);
+    auto extend_data = static_cast<extends *>(data);
+    if (extend_data->enableTaint()) {
+      auto taint_trace=extend_data->taintTrace;
+      taint_trace->postInstTrace(vm, gprState, fprState);
+    }
+
 
     return CONTINUE;
 }
@@ -71,12 +74,16 @@ VMAction memWRAccess(VM *vm, GPRState *gprState, FPRState *fprState, void *data)
 }
 
 
-VM init(void *address,PRINT_MODE printMode, uint64_t trace_all,TaintTrace *taint_trace) {
+VM init(void *address, uint64_t trace_all,TaintTrace *taint_trace) {
     VM qvm{};
     extends *data;
 
     if (taint_trace) {
         data = new extends(taint_trace);
+        if (!taint_trace->isTraceMode())
+        {
+          qvm.addMemAccessCB(MEMORY_READ_WRITE,memWRAccess,data);
+        }
     } else {
         data = new extends();
     }
@@ -84,10 +91,7 @@ VM init(void *address,PRINT_MODE printMode, uint64_t trace_all,TaintTrace *taint
 
     qvm.addCodeCB(POSTINST, postInstruction, data);
     qvm.addCodeCB(PREINST,preInstruction,data);
-    if (printMode!=TRACE_MODE)
-    {
-        qvm.addMemAccessCB(MEMORY_READ_WRITE,memWRAccess,data);
-    }
+
 
     if (trace_all){
         qvm.instrumentAllExecutableMaps();

@@ -1,17 +1,17 @@
 
-#include "taintAnalyze.h"
+#include "taint_analyze.h"
 
 
-#include "taintUtils.h"
+#include "taint_utils.h"
 #define UNKNOWN_CONST 0xdeadbeef
-string defaultTracePath = "taint.asm";
-TaintTrace::TaintTrace(std::string* path, uint64_t base,PRINT_MODE printMode=ADDR_MODE): regNames()
+string default_taint_file = "taint.asm";
+string default_trace_file = "trace.asm";
+TaintTrace::TaintTrace(std::string* path, uint64_t base,PrintMode printMode=ADDR_MODE): regNames()
 {
     if (path == nullptr) {
-        path =& defaultTracePath;
-
+        path =new std::string("");
     }
-    log.open(*path, ios::out | ios::trunc);
+    log.open(*path+default_taint_file, ios::out | ios::trunc);
     this->base = base;
     this->printMode = printMode;
     regNames.setGPRArray(QBDI::GPR_NAMES, regsState);
@@ -19,50 +19,15 @@ TaintTrace::TaintTrace(std::string* path, uint64_t base,PRINT_MODE printMode=ADD
     {
         log << ASM_START_STR << endl;
     }
-    if (isDebugMode())
+    if (isDebugMode()||isTraceMode())
     {
-        allLog.open(*path + ".asm", ios::out | ios::trunc);
+        allLog.open(*path + default_trace_file, ios::out | ios::trunc);
     }
 }
 
-TaintTrace::~TaintTrace() {
-    log.close();
-}
-bool TaintTrace::isValid(int64_t input) {
-    return input>=0;
-}
-bool TaintTrace::isTaintReg(int regIdx) {
-    if (!isValid(regIdx))return false;
-    return regsState.isTaintReg(regIdx);
-}
 
-void TaintTrace::addTaintMemory(uint64_t addr,int size){
-    taintMemory.insertBySize(addr,size);
-}
 
-void TaintTrace::addTaintMemory(MemoryRange& memoryRange){
-    taintMemory.insert(memoryRange.minAddr,memoryRange.maxAddr);
-}
-void TaintTrace::setTaintStr(char *str) {
-    if (str) {
-        taintStr=new char[strlen(str)+1];
-        strcpy(taintStr,str);
-        LOGE("TaintStr set: %s %s",taintStr,str);
-    }
-}
 
-bool TaintTrace::isAddrMode() const
-{
-    return printMode==ADDR_MODE;
-}
-bool TaintTrace::isAsmMode() const
-{
-    return printMode==ASM_MODE;
-}
-bool TaintTrace::isDebugMode() const
-{
-    return  printMode==DEBUG_MODE;
-}
 
 
 
@@ -140,25 +105,12 @@ QBDI::VMAction TaintTrace::instTrace(QBDI::VM *vm, QBDI::GPRState *gprState, QBD
     rwRegIdx[1]=-1;
 
     const QBDI::InstAnalysis *inst = vm->getInstAnalysis(
-            static_cast<QBDI::AnalysisType>(QBDI::ANALYSIS_INSTRUCTION | QBDI::ANALYSIS_SYMBOL |
-                                            QBDI::ANALYSIS_DISASSEMBLY | QBDI::ANALYSIS_OPERANDS));
-    // string str(inst->disassembly);
-    // if (str.rfind("jmp ", 0) == 0)
-    // {
-    //     LOGE("found int3");
-    //     vm->removeInstrumentedRange(inst->address, inst->instSize+inst->address);
-    //     return QBDI::CONTINUE;
-    // }
-    if (!inst)return QBDI::CONTINUE;
-    uint64_t offset = inst->address - base;
-    // if (offset==0x23fd)
-    // {
-    //     LOGE("rsi:%llx",gprState->rsi);
-    //     LOGE("rdi:%llx",gprState->rdi);
-    //     LOGE("str rsi:%s",gprState->rsi);
-    //     LOGE("str rdi:%s",gprState->rdi);
-    //
-    // }
+            QBDI::ANALYSIS_INSTRUCTION | QBDI::ANALYSIS_SYMBOL |
+        QBDI::ANALYSIS_DISASSEMBLY | QBDI::ANALYSIS_OPERANDS);
+
+    if (!inst) return QBDI::CONTINUE;
+    const uint64_t offset = inst->address - base;
+
 
     // analyse operands
     for(int idx = 0;idx < inst->numOperands;idx++){
@@ -188,7 +140,7 @@ QBDI::VMAction TaintTrace::instTrace(QBDI::VM *vm, QBDI::GPRState *gprState, QBD
 
 
     // trace
-    if (isDebugMode())
+    if (isDebugMode()||isTraceMode())
     {
 
         std::ostringstream logStr1;
@@ -203,9 +155,13 @@ QBDI::VMAction TaintTrace::instTrace(QBDI::VM *vm, QBDI::GPRState *gprState, QBD
         if (isValid(rRegIdx))
             allLog <<"  "<< regNames[rRegIdx] <<
                    "=" <<toHex(QBDI_GPR_GET(gprState,rRegIdx)) ;
-        allLog << endl;
+        // allLog << endl;
+        allLog << " | ";
         // printReg(gprState);
-        allLog.flush();
+        setPostInstFlag();
+        if (isTraceMode()) {
+          return QBDI::CONTINUE;
+        }
     }
 
     // taint process
@@ -294,6 +250,24 @@ void TaintTrace::postInstTrace(QBDI::VM *vm, QBDI::GPRState *gprState, QBDI::FPR
 {
     if (!postInstFlag)return;
     cleanPostInstFlag();
+    if (isTraceMode()||isDebugMode()) {
+      ofstream &log= allLog;
+      if (isValid(wRegIdx))
+        log <<"  "<< regNames[wRegIdx] <<
+            "=" <<toHex(QBDI_GPR_GET(gprState,wRegIdx)) + " ";
+      if (isValid(rwRegIdx[0]))
+        log <<"  "<< regNames[rwRegIdx[0]] <<
+            "=" << toHex(QBDI_GPR_GET(gprState,rwRegIdx[0])) + " ";
+      if (isValid(rRegIdx))
+        log <<"  "<< regNames[rRegIdx] <<
+            "=" <<toHex(QBDI_GPR_GET(gprState,rRegIdx));
+      log << endl;
+      log.flush();
+
+      return;
+
+    }
+    // todo... fix:debug mode taint.asm will lose post reg value
     if (isValid(wRegIdx))
         log <<"  "<< regNames[wRegIdx] <<
             "=" <<toHex(QBDI_GPR_GET(gprState,wRegIdx)) + " ";

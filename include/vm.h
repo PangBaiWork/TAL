@@ -6,9 +6,7 @@
 #define QBDIRECORDER_VM_H
 
 #include "QBDI.h"
-
-#include "taintAnalyze.h"
-
+#include "taint_analyze.h"
 
 #define STACK_SIZE  0x100000
 
@@ -47,7 +45,7 @@ struct extends {
 
 
 
- QBDI::VM init(void *address,PRINT_MODE printMode,uint64_t trace_all = false,TaintTrace *taintTrace= nullptr);
+ QBDI::VM init(void *address,uint64_t trace_all = false,TaintTrace *taintTrace= nullptr);
 
 
 #endif //QBDIRECORDER_VM_H

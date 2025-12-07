@@ -145,8 +145,9 @@ int main()
     unsigned char key[16]="11111111";
     //printf("%p",btea);
     // taint_trace((void*)&btea,1,(uint64_t)flag,16,2);
-    taint_trace_str((void*)&btea,1,(char*)flag,2);
+    taint_trace_str((void*)&btea,1,(char*)flag,1);
     btea((uint32_t*)flag,4,(uint32_t*)key);
+    return  0x114514;
     LOGD("test finish");
     // int sum=0;
     // for (int i = 0; i < 10000000000; i++)

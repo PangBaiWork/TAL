@@ -30,10 +30,10 @@
 
 // 格式化字符串的 LOGD 宏
 #define LOGD(fmt, ...) fprintf(stdout, fmt "\n", ##__VA_ARGS__)
-#define LOGI(fmt, ...) fprintf(stdout, "[INFO] " fmt "\n", ##__VA_ARGS__)
-#define LOGW(fmt, ...) fprintf(stdout, "[WARN] " fmt "\n", ##__VA_ARGS__)
-#define LOGE(fmt, ...) fprintf(stderr, "[ERROR] " fmt "\n", ##__VA_ARGS__)
-#define LOGS(fmt, ...) fprintf(stdout, "[] " fmt "\n", ##__VA_ARGS__)
+#define LOGI(fmt, ...) fprintf(stdout, "[TTD INFO] " fmt "\n", ##__VA_ARGS__)
+#define LOGW(fmt, ...) fprintf(stdout, "[TTD WARN] " fmt "\n", ##__VA_ARGS__)
+#define LOGE(fmt, ...) fprintf(stderr, "[TTD ERROR] " fmt "\n", ##__VA_ARGS__)
+#define LOGS(fmt, ...) fprintf(stdout, "[TTD] " fmt "\n", ##__VA_ARGS__)
 
 std::string readMemToHex(const void* ptr, size_t length);
 std::string toHex(uint64_t value);

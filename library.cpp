@@ -5,8 +5,7 @@
 
 #include "QBDI.h"
 #include "fs_gs.h"
-#include "hookUtils.h"
-
+#include "hook_utils.h"
 #include "utils.h"
 #include "vm.h"
 #define SET_QBDI(reg) (state->reg = cpu->reg);LOGE(#reg":%llx,",cpu->reg)
@@ -103,7 +102,7 @@ void syn_reg_gum(GumCpuContext *cpu, QBDI::GPRState *state, bool F2Q) {
 bool isTraceAll = false;
 
 MemoryRange *taintMemory=nullptr;
-PRINT_MODE g_print_mode=ADDR_MODE;
+PrintMode g_print_mode=ADDR_MODE;
 string *log_path=nullptr;
 uint64_t g_base=0;
 GumCpuContext g_cpu_context;
@@ -176,8 +175,6 @@ char * g_taint_str=nullptr;
 
 
 static void on_enter(GumInvocationContext *context, gpointer user_data) {
-    unsigned long long rspvalue;
-    unsigned long long rbpvalue;
     print_reg(context->cpu_context);
     LOGS("begin");
     memcpy(&g_cpu_context,context->cpu_context,sizeof(GumCpuContext));
@@ -190,17 +187,17 @@ static void on_enter(GumInvocationContext *context, gpointer user_data) {
     GumModule* module = gum_process_find_module_by_address((GumAddress)g_function);
     uint64_t base_addr = gum_module_get_range(module)->base_address;
     LOGE("Base:%llx",base_addr);
-    auto *taintTrace = new TaintTrace(log_path, base_addr,g_print_mode);
+    auto *taint_trace = new TaintTrace(log_path, base_addr,g_print_mode);
 
-    if (taintMemory!=nullptr)
-        taintTrace->addTaintMemory(*taintMemory);
+    if (taintMemory)
+        taint_trace->addTaintMemory(*taintMemory);
     else {
-        taintTrace->setTaintStr(g_taint_str);
+        taint_trace->setTaintStr(g_taint_str);
     }
 
-    QBDI::setLogPriority(QBDI::DEBUG);
+    // QBDI::setLogPriority(QBDI::DEBUG);
     QBDI::setLogFile("log.asm",true);
-    QBDI::VM qvm = init(g_function,g_print_mode,isTraceAll,taintTrace);
+    QBDI::VM qvm = init(g_function,isTraceAll,taint_trace);
     //qvm.setOptions(QBDI::OPT_ENABLE_FS_GS);
 
 
@@ -208,8 +205,9 @@ static void on_enter(GumInvocationContext *context, gpointer user_data) {
 
     auto state = qvm.getGPRState();
     syn_reg_gum(&g_cpu_context, state, true);
-    state->fs=get_fs_selector();
-    state->gs=get_gs_selector();
+    // state->fs=get_fs_selector();
+    // state->gs=get_gs_selector();
+
 
     qvm.run(reinterpret_cast<QBDI::rword>(g_function),FAKE_RET_ADDR);
     syn_reg_gum(&g_cpu_context, state, false);
@@ -223,7 +221,7 @@ VISIBILITY_DEFAULT   void taint_trace(void *addr,bool trace_all,uint64_t taintAd
     isTraceAll = trace_all;
     LOGD("taint: %llx size:%d", taintAddr,taintSize);
     LOGD("hooking %p", addr);
-    g_print_mode=static_cast<PRINT_MODE>(printMode);
+    g_print_mode=static_cast<PrintMode>(printMode);
     taintMemory = new MemoryRange(taintAddr,taintAddr + taintSize);
     g_interceptor = gum_interceptor_obtain();
     g_listener = hookUtils::gum_attach(g_interceptor,addr, on_enter,nullptr, nullptr);
@@ -234,7 +232,7 @@ VISIBILITY_DEFAULT   void taint_trace_str(void *addr,bool trace_all,char *taint_
     isTraceAll = trace_all;
     LOGD("taint string: %s", taint_str);
     LOGD("hooking %p", addr);
-    g_print_mode=static_cast<PRINT_MODE>(printMode);
+    g_print_mode=static_cast<PrintMode>(printMode);
     g_taint_str = new char[strlen(taint_str)+1];
     strcpy(g_taint_str,taint_str);
     g_interceptor = gum_interceptor_obtain();
@@ -254,7 +252,6 @@ VISIBILITY_DEFAULT   void taint_trace_str(void *addr,bool trace_all,char *taint_
 //     LOGS("attd_call end %p", target_addr);
 // }
 
-
 CONSTRUCTOR_ATTR void init_main() {
     gum_init_embedded();
     LOGE("load ok");
@@ -266,7 +263,15 @@ BOOL APIENTRY DllMain(HMODULE hModule,
                       DWORD  ul_reason_for_call,
                       LPVOID lpReserved)
 {
-    gum_init_embedded();
+  switch (ul_reason_for_call) {
+    case DLL_PROCESS_ATTACH:
+      //  For optimization.
+      DisableThreadLibraryCalls(hModule);
+      break;
+    case DLL_PROCESS_DETACH:
+      break;
+  }
+    init_main();
     return TRUE;  // Successful DLL_PROCESS_ATTACH.
 }
 
