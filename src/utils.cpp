@@ -5,7 +5,7 @@
 #include "utils.h"
 std::string toHex(uint64_t value) {
     char buff[32];
-    sprintf(buff, "0x%lx", value);
+    sprintf(buff, "0x%llx", value);
     return buff;
 }
 

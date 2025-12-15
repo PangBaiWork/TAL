@@ -194,20 +194,26 @@ static void on_enter(GumInvocationContext *context, gpointer user_data) {
     else {
         taint_trace->setTaintStr(g_taint_str);
     }
-
+    //
     // QBDI::setLogPriority(QBDI::DEBUG);
-    QBDI::setLogFile("log.asm",true);
-    QBDI::VM qvm = init(g_function,isTraceAll,taint_trace);
-    //qvm.setOptions(QBDI::OPT_ENABLE_FS_GS);
+    // QBDI::setLogFile("log.asm",true);
+    vector<MemoryRange> avoid_range={};
+
+    // avoid_range.push_back(MemoryRange(base_addr+0x1710,base_addr+0x182d));
+    QBDI::VM qvm = init(g_function,isTraceAll,taint_trace,avoid_range);
+    qvm.setOptions(QBDI::OPT_ENABLE_FS_GS);
 
 
-    LOGE("gs: %x,fs:%x",get_fs_selector(),get_gs_selector());
+
 
     auto state = qvm.getGPRState();
     syn_reg_gum(&g_cpu_context, state, true);
     // state->fs=get_fs_selector();
     // state->gs=get_gs_selector();
-
+    // state->fs=get_fs_base();
+    // state->gs=get_gs_base();
+    LOGE("gs: %llx,fs:%llx",state->gs,state->fs);
+    // LOGE("gs_base:%llx,fs_base:%llx",get_gs_base(),get_fs_base());
 
     qvm.run(reinterpret_cast<QBDI::rword>(g_function),FAKE_RET_ADDR);
     syn_reg_gum(&g_cpu_context, state, false);
@@ -216,6 +222,7 @@ static void on_enter(GumInvocationContext *context, gpointer user_data) {
     LOGS("end");
     printf("[*] Function entered! user_data=%s\n", (char *)user_data);
 }
+
 
 VISIBILITY_DEFAULT   void taint_trace(void *addr,bool trace_all,uint64_t taintAddr,int taintSize,int printMode) {
     isTraceAll = trace_all;

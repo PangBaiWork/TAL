@@ -42,6 +42,7 @@ if(QBDI_PLATFORM STREQUAL "windows")
     add_compile_options($<$<CXX_COMPILER_ID:MSVC>:/MP${CPU_NUMBER_OF_LOGICAL_CORES}>)
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /Z7")
     set(CMAKE_SHARED_LINKER_FLAGS_DEBUG "${CMAKE_SHARED_LINKER_FLAGS_DEBUG} /DEBUG:FULL")
+    set(ASM_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/asm/fs_gs_x64_msvc.asm")
 
 else(QBDI_PLATFORM STREQUAL "linux" OR QBDI_PLATFORM STREQUAL "android")
     message(STATUS "Linux or Android")
@@ -50,7 +51,7 @@ else(QBDI_PLATFORM STREQUAL "linux" OR QBDI_PLATFORM STREQUAL "android")
     set(CMAKE_CROSSCOMPILING "FALSE")
 
     set(CMAKE_CXX_FLAGS_RELEASE " -DNDEBUG -ffast-math -flto -fomit-frame-pointer -funroll-loops -fno-stack-protector")
-
+    set(ASM_FILES "")
 endif()
 
 set(CMAKE_CXX_STANDARD 17)
@@ -85,13 +86,13 @@ message("Variable value: ${FILE_SOURCES}")
 add_library(${TARGET_NAME} SHARED
         ${FILE_SOURCES}
         library.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/asm/fs_gs_x64_msvc.asm
+        ${ASM_FILES}
 )
 #target_compile_options(${TARGET_NAME} PRIVATE -mstackrealign)
 add_library(${TARGET_NAME}_static STATIC
         ${FILE_SOURCES}
         library.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/asm/fs_gs_x64_msvc.asm
+        ${ASM_FILES}
 )
 
 

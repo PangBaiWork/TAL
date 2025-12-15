@@ -4,20 +4,24 @@
 
 #include "taint_utils.h"
 #define UNKNOWN_CONST 0xdeadbeef
-string default_taint_file = "taint.asm";
+#define TAB "\t"
+#define ENTER endl
+string default_taint_file = ".asm";
 string default_trace_file = "trace.asm";
 TaintTrace::TaintTrace(std::string* path, uint64_t base,PrintMode printMode=ADDR_MODE): regNames()
 {
     if (path == nullptr) {
         path =new std::string("");
     }
-    log.open(*path+default_taint_file, ios::out | ios::trunc);
+
+    log.open(*path+ModeName[printMode]+default_taint_file, ios::out | ios::trunc);
+
     this->base = base;
     this->printMode = printMode;
     regNames.setGPRArray(QBDI::GPR_NAMES, regsState);
     if (isAsmMode())
     {
-        log << ASM_START_STR << endl;
+        log << ASM_START_STR << ENTER;
     }
     if (isDebugMode()||isTraceMode())
     {
@@ -40,7 +44,7 @@ void TaintTrace::printMemoryOp(QBDI::GPRState* gpr,uint64_t offset,QBDI::MemoryA
     {
         tmp +=  toHex(offset) + ":";
     }
-    tmp += "    mov ";
+    tmp += TAB "mov ";
     if (isValid(wRegIdx)){
         tmp += regNames.get(wRegIdx);
 
@@ -49,7 +53,7 @@ void TaintTrace::printMemoryOp(QBDI::GPRState* gpr,uint64_t offset,QBDI::MemoryA
         if (isAsmMode()) tmp += ";";
         logStr << std::left << std::setw(STR_ALIGN) << tmp;
         logStr << " | ";
-        logStr << regNames[wRegIdx] <<" idx:" << wRegIdx << "=" << toHex(memoryAccess->value);
+        logStr << regNames[wRegIdx] << "=" << toHex(memoryAccess->value);
         logStr << " <" << memoryAccess->size;
         logStr << ">\n";
     } else {
@@ -59,19 +63,20 @@ void TaintTrace::printMemoryOp(QBDI::GPRState* gpr,uint64_t offset,QBDI::MemoryA
 
         if (isAsmMode()) tmp += ";";
         logStr << std::left << std::setw(STR_ALIGN) << tmp;
-        logStr << regNames[rRegIdx] <<" idx:" << rRegIdx << "=" << toHex(memoryAccess->value);
+        logStr << regNames[rRegIdx]  << "=" << toHex(memoryAccess->value);
         logStr << " <" << memoryAccess->size;
         logStr << "> | \n";
         // logStr << "\n";
     }
     log << logStr.str();
-    log.flush();
+    if (needFlush()) log.flush();
 
 
 }
 
-#define PRINT_QBDI_REG(reg) (allLog<<#reg<<":"<<toHex(state->reg)<<endl)
+#define PRINT_QBDI_REG(reg) (allLog<<#reg<<":"<<toHex(state->reg)<<ENTER)
 // LOGE(#reg"_org:%llx,",state->reg)
+QBDI::rword gs=0;
 void TaintTrace::printReg(QBDI::GPRState *state) {
     // PRINT_QBDI_REG(r8);
     // PRINT_QBDI_REG(r9);
@@ -91,7 +96,12 @@ void TaintTrace::printReg(QBDI::GPRState *state) {
     // PRINT_QBDI_REG(rsi);
     // PRINT_QBDI_REG(rdi);
     PRINT_QBDI_REG(gs);
-    PRINT_QBDI_REG(rax);
+    // if (!gs) {
+    //   gs=state->gs;
+    // }else {
+    //   state->gs=gs;
+    // }
+    // PRINT_QBDI_REG(rax);
 
     // PRINT_QBDI_REG();
 
@@ -107,6 +117,7 @@ QBDI::VMAction TaintTrace::instTrace(QBDI::VM *vm, QBDI::GPRState *gprState, QBD
     const QBDI::InstAnalysis *inst = vm->getInstAnalysis(
             QBDI::ANALYSIS_INSTRUCTION | QBDI::ANALYSIS_SYMBOL |
         QBDI::ANALYSIS_DISASSEMBLY | QBDI::ANALYSIS_OPERANDS);
+
 
     if (!inst) return QBDI::CONTINUE;
     const uint64_t offset = inst->address - base;
@@ -155,7 +166,7 @@ QBDI::VMAction TaintTrace::instTrace(QBDI::VM *vm, QBDI::GPRState *gprState, QBD
         if (isValid(rRegIdx))
             allLog <<"  "<< regNames[rRegIdx] <<
                    "=" <<toHex(QBDI_GPR_GET(gprState,rRegIdx)) ;
-        // allLog << endl;
+        // allLog << ENTER;
         allLog << " | ";
         // printReg(gprState);
         setPostInstFlag();
@@ -172,10 +183,11 @@ QBDI::VMAction TaintTrace::instTrace(QBDI::VM *vm, QBDI::GPRState *gprState, QBD
         }
         if (isTaintReg(rRegIdx) && !isTaintReg(wRegIdx)){
             if (isValid(wRegIdx)){
-                regsState.setTaintReg(wRegIdx,0);
+                setTaintReg(wRegIdx,0);
             } else {
-                // CMP REG, REG
-                return QBDI::CONTINUE;
+                // CMP REG, *REG
+                // mov	mem, *rax
+                if (!inst->isCompare) return QBDI::CONTINUE;
             }
         } else if (!isTaintReg(rRegIdx) && isTaintReg(wRegIdx)){
             regsState.clearReg(wRegIdx);
@@ -186,19 +198,23 @@ QBDI::VMAction TaintTrace::instTrace(QBDI::VM *vm, QBDI::GPRState *gprState, QBD
             if (isTaintReg(rwRegIdx[1])){
                 // XCHG REG,*REG
                 regsState.clearReg(rwRegIdx[1]);
-                regsState.setTaintReg(rwRegIdx[0],0);
+                setTaintReg(rwRegIdx[0],0);
             } else if (isTaintReg(rRegIdx)){
                 /*
                  * XOR  REG,*REG
+                 * PUSH *REG
                  */
-                regsState.setTaintReg(rwRegIdx[0],0);
+                if (rwRegIdx[0]==QBDI::REG_SP) {
+                  return QBDI::CONTINUE;
+                }
+                setTaintReg(rwRegIdx[0],0);
             } else {
                    return QBDI::CONTINUE;;
             }
         } else if (isValid(rwRegIdx[1])&&!isTaintReg(rwRegIdx[1])){
             // XCHG *REG1, REG2
             regsState.clearReg(rwRegIdx[0]);
-            regsState.setTaintReg(rwRegIdx[1],0);
+            setTaintReg(rwRegIdx[1],0);
         }
         /* INC *REG
          * XCHG *REG,REG
@@ -220,13 +236,17 @@ QBDI::VMAction TaintTrace::instTrace(QBDI::VM *vm, QBDI::GPRState *gprState, QBD
 //        "=" <<toHex(QBDI_GPR_GET(gprState,rRegIdx)) + "\n";
 //    log << logStr.str();
     //isAsmMode()&&
-    if (!isTaintReg(rRegIdx)&&isValid(rRegIdx))
-    {
-        log << "  mov "<< QBDI::GPR_NAMES[rRegIdx] << ", "<< toHex(QBDI_GPR_GET(gprState,rRegIdx)) <<endl;
-    }
+
 
     setPostInstFlag();
+    if (!isTaintReg(rRegIdx)&&isValid(rRegIdx))
+    {
+      // for asm
+      if (isAddrMode()||isDebugMode()) log << toHex(offset) << ":";
+      log << TAB "mov "<< QBDI::GPR_NAMES[rRegIdx] << ", "<< toHex(QBDI_GPR_GET(gprState,rRegIdx)) <<ENTER;
+    }
     std::ostringstream logStr;
+    // if (inst->symbolName) logStr << inst->symbolName << "!";
     if (isAddrMode()||isDebugMode()) logStr << toHex(offset) << ":";
     logStr << inst->disassembly;
     if (isAsmMode()) logStr << ";";
@@ -252,6 +272,7 @@ void TaintTrace::postInstTrace(QBDI::VM *vm, QBDI::GPRState *gprState, QBDI::FPR
     cleanPostInstFlag();
     if (isTraceMode()||isDebugMode()) {
       ofstream &log= allLog;
+      // printReg(gprState);
       if (isValid(wRegIdx))
         log <<"  "<< regNames[wRegIdx] <<
             "=" <<toHex(QBDI_GPR_GET(gprState,wRegIdx)) + " ";
@@ -261,8 +282,8 @@ void TaintTrace::postInstTrace(QBDI::VM *vm, QBDI::GPRState *gprState, QBDI::FPR
       if (isValid(rRegIdx))
         log <<"  "<< regNames[rRegIdx] <<
             "=" <<toHex(QBDI_GPR_GET(gprState,rRegIdx));
-      log << endl;
-      log.flush();
+      log << ENTER;
+      if(needFlush()) log.flush();
 
       return;
 
@@ -277,8 +298,8 @@ void TaintTrace::postInstTrace(QBDI::VM *vm, QBDI::GPRState *gprState, QBDI::FPR
     if (isValid(rRegIdx))
         log <<"  "<< regNames[rRegIdx] <<
             "=" <<toHex(QBDI_GPR_GET(gprState,rRegIdx));
-    log << endl;
-    log.flush();
+    log << ENTER;
+    // if(needFlush()) log.flush();
 }
 void TaintTrace::memoryTrace(QBDI::VM *vm, QBDI::GPRState *gprState, QBDI::FPRState *fprState) {
     int16_t rRegIdx = -1,wRegIdx = -1,rwRegIdx=-1;
@@ -346,7 +367,7 @@ void TaintTrace::memoryTrace(QBDI::VM *vm, QBDI::GPRState *gprState, QBDI::FPRSt
                 auto memoryRange = taintMemory.find(memoryAccess.accessAddress);
                 if (memoryRange){
                     if (isValid(wRegIdx)){
-                        regsState.setTaintReg(wRegIdx,0);
+                        setTaintReg(wRegIdx,0);
                         printMemoryOp(gprState,offset,&memoryAccess,wRegIdx,-1);
 
                     }else if(isValid(rwRegIdx)){
@@ -355,13 +376,14 @@ void TaintTrace::memoryTrace(QBDI::VM *vm, QBDI::GPRState *gprState, QBDI::FPRSt
                                 ADD REG, *[MEM]
                                 SUB REG, *[MEM] */
 
-                        regsState.setTaintReg(rwRegIdx,0);
+                        setTaintReg(rwRegIdx,0);
 
-                        log << "    mov "<< QBDI::GPR_NAMES[rwRegIdx] << ", "<< toHex(UNKNOWN_CONST) <<endl;
+                        if (isAddrMode()||isDebugMode()) log << toHex(offset) << ":";
+                        log << TAB "mov "<< QBDI::GPR_NAMES[rwRegIdx] << ", "<< toHex(UNKNOWN_CONST) <<ENTER;
                         std::ostringstream logStr;
 
                         if (isAddrMode()||isDebugMode()) logStr << toHex(offset) << ":";
-                        logStr << "	"<< disasmer.analyzeInst(inst->address)->mnemonic<<" "<<QBDI::GPR_NAMES[rwRegIdx]
+                        logStr << TAB << disasmer.analyzeInst(inst->address)->mnemonic<<" "<<QBDI::GPR_NAMES[rwRegIdx]
                         <<", ["<< toHex(memoryAccess.accessAddress) <<"]";
                             // inst->disassembly;
                         if (isAsmMode()) logStr << ";";
@@ -389,7 +411,7 @@ void TaintTrace::memoryTrace(QBDI::VM *vm, QBDI::GPRState *gprState, QBDI::FPRSt
                 bool result = taintMemory.insertBySize(memoryAccess.accessAddress,memoryAccess.size);
                 if (isDebugMode())
                 {
-                    log << flag<< "[--> add " << toHex(offset) +
+                    log <<  "[--> add " << toHex(offset) +
                         " range:" << toHex(memoryAccess.accessAddress) +
                         "->"+ toHex(memoryAccess.accessAddress+memoryAccess.size)+ "] "<< result <<"\n";
                 }
@@ -417,14 +439,15 @@ void TaintTrace::memoryTrace(QBDI::VM *vm, QBDI::GPRState *gprState, QBDI::FPRSt
 
             if (memoryRange&&!isTaintReg(rRegIdx)){
                 // XOR *[MEM], REG
-                log << "    mov "<< QBDI::GPR_NAMES[rRegIdx] << ", "<< toHex(UNKNOWN_CONST) << endl;
+                if (isAddrMode()||isDebugMode()) log << toHex(offset) << ":";
+                log << TAB "mov "<< QBDI::GPR_NAMES[rRegIdx] << ", "<< toHex(QBDI_GPR_GET(gprState,rRegIdx)) << ENTER;
             }else if (!memoryRange&&isTaintReg(rRegIdx)){
                 // XOR [MEM], *REG
                 taintMemory.insertBySize(memoryAccess.accessAddress,memoryAccess.size);
             }
             std::ostringstream logStr2;
             if (isAddrMode()||isDebugMode()) logStr2 << toHex(offset) << ":";
-            logStr2 << "  " << disasmer.analyzeInst(inst->address)->mnemonic << " ["<< toHex(memoryAccess.accessAddress) <<"], "
+            logStr2 << TAB << disasmer.analyzeInst(inst->address)->mnemonic << " ["<< toHex(memoryAccess.accessAddress) <<"], "
                             <<  QBDI::GPR_NAMES[rRegIdx] ;
             if (isAsmMode()) logStr2 << ";";
             log  << std::left << std::setw(STR_ALIGN) << logStr2.str();
@@ -434,7 +457,6 @@ void TaintTrace::memoryTrace(QBDI::VM *vm, QBDI::GPRState *gprState, QBDI::FPRSt
             log << ">\n";
             break;
     }
-
-    log.flush();
+    if(needFlush()) log.flush();
 
 }

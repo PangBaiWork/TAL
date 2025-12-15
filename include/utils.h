@@ -12,7 +12,7 @@
 
 #include <chrono>
 #if defined(__GNUC__) || defined(__clang__)
-    #define VISIBILITY_DEFAULT __attribute__((visibility("default")))
+    #define VISIBILITY_DEFAULT  extern "C" __attribute__((visibility("default")))
 #elif defined(_MSC_VER)
     #define VISIBILITY_DEFAULT extern "C"  __declspec(dllexport)
 #else

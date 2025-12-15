@@ -22,7 +22,15 @@ enum PrintMode {
   ASM_MODE = 1,
   DEBUG_MODE = 2,
   TRACE_MODE = 3,
+
 };
+inline  std::unordered_map<PrintMode, std::string> ModeName = {
+  {ADDR_MODE,   "addr"},
+  {ASM_MODE, "asm"},
+  {DEBUG_MODE,  "debug"},
+  {TRACE_MODE,  "trace"},
+};
+
 using namespace std;
 class TaintTrace {
  public:
@@ -40,11 +48,13 @@ class TaintTrace {
   PrintMode getPrintMode() const { return printMode; }
   void setPostInstFlag() { postInstFlag = true; }
   void cleanPostInstFlag() { postInstFlag = false; }
-  bool isAddrMode() const { return printMode == ADDR_MODE; }
-  bool isAsmMode() const { return printMode == ASM_MODE; }
-  bool isDebugMode() const { return printMode == DEBUG_MODE; }
-  bool isTraceMode() const { return printMode == TRACE_MODE; }
-
+  inline bool isAddrMode() const { return printMode == ADDR_MODE; }
+  inline bool isAsmMode() const { return printMode == ASM_MODE; }
+  inline bool isDebugMode() const { return printMode == DEBUG_MODE; }
+  inline bool isTraceMode() const { return printMode == TRACE_MODE; }
+  inline bool  needFlush() const {
+    return isDebugMode();
+  }
   bool checkTaintedStr(uint64_t addr) {
     // LOGE("READ:%llx",addr);
     if (!taintMemory.size() && taintStr && READABLE_ADDR < addr) {
@@ -77,6 +87,11 @@ class TaintTrace {
   }
   bool isValid(int64_t input) {
     return input>=0;
+  }
+  bool setTaintReg(int regIdx,uint64_t memRef) {
+    // if (regIdx==15)log<<"set taint rsp"<<endl;
+    regsState.setTaintReg(regIdx,memRef);
+    return true;
   }
   bool isTaintReg(int regIdx) {
     if (!isValid(regIdx))return false;

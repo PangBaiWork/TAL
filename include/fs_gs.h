@@ -12,12 +12,12 @@ extern "C" {
 #endif
 
 /* Return lower 16-bit selector value (or 0 on failure). */
-uint16_t get_fs_selector(void);
-uint16_t get_gs_selector(void);
+QBDI::rword get_fs_selector(void);
+QBDI::rword get_gs_selector(void);
 
 /* Return FS/GS base pointer (or 0 on failure). */
-uintptr_t get_fs_base(void);
-uintptr_t get_gs_base(void);
+QBDI::rword get_fs_base(void);
+QBDI::rword get_gs_base(void);
 
 #ifdef __cplusplus
 }

@@ -74,7 +74,7 @@ VMAction memWRAccess(VM *vm, GPRState *gprState, FPRState *fprState, void *data)
 }
 
 
-VM init(void *address, uint64_t trace_all,TaintTrace *taint_trace) {
+VM init(void *address, uint64_t trace_all,TaintTrace *taint_trace,vector<MemoryRange> avoid_range) {
     VM qvm{};
     extends *data;
 
@@ -95,6 +95,17 @@ VM init(void *address, uint64_t trace_all,TaintTrace *taint_trace) {
 
     if (trace_all){
         qvm.instrumentAllExecutableMaps();
+        for (MemoryRange range : avoid_range) {
+          qvm.removeInstrumentedRange(range.minAddr,range.maxAddr);
+        }
+        // qvm.setInstrumentationMode(InstrumentationMode::Blacklist);
+        // qvm.addInstrumentedRange((rword) free, (rword) free + 8);
+        // qvm.addInstrumentedRange((rword) malloc, (rword) malloc + 8);
+        // qvm.addInstrumentedRange((rword) realloc, (rword) realloc + 8);
+        // qvm.addInstrumentedRange((rword) calloc, (rword) calloc + 8);
+        // qvm.addInstrumentedRange((rword) memset, (rword) memset + 8);
+        // return qvm;
+
         // qvm.enableBlackListMode();
     }else {
         qvm.addInstrumentedModuleFromAddr(reinterpret_cast<rword>(address));
@@ -113,6 +124,10 @@ VM init(void *address, uint64_t trace_all,TaintTrace *taint_trace) {
         "libart.so",
         "libEGL.so",
         "libGLESv1_CM.so",
+           "USER32.dll",
+      "user32.dll",
+      "KERNEL32.dll",
+      "kernel32.dll",
     };
     for (const auto& name : module_name) {
         bool result = qvm.removeInstrumentedModule(name);
