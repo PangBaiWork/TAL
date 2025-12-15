@@ -25,7 +25,7 @@ VMAction postInstruction(VM *vm, GPRState *gprState, FPRState *fprState, void *d
     auto extend_data = static_cast<extends *>(data);
     if (extend_data->enableTaint()) {
       auto taint_trace=extend_data->taintTrace;
-      taint_trace->postInstTrace(vm, gprState, fprState);
+      taint_trace->PostInstTrace(vm, gprState, fprState);
     }
 
 
@@ -62,14 +62,14 @@ VMAction preInstruction(VM *vm, GPRState *gprState, FPRState *fprState, void *da
     auto extend_data = (extends *) data;
 
     if (extend_data->enableTaint())
-        return  extend_data->taintTrace->instTrace(vm,gprState,fprState);
+        return  extend_data->taintTrace->InstTrace(vm,gprState,fprState);
     return CONTINUE;
 }
 
 VMAction memWRAccess(VM *vm, GPRState *gprState, FPRState *fprState, void *data) {
     auto extend_data = (extends *) data;
     if (extend_data->enableTaint())
-        extend_data->taintTrace->memoryTrace(vm,gprState,fprState);
+        extend_data->taintTrace->MemoryTrace(vm,gprState,fprState);
     return CONTINUE;
 }
 
@@ -80,7 +80,7 @@ VM init(void *address, uint64_t trace_all,TaintTrace *taint_trace,vector<MemoryR
 
     if (taint_trace) {
         data = new extends(taint_trace);
-        if (!taint_trace->isTraceMode())
+        if (!taint_trace->IsTraceMode())
         {
           qvm.addMemAccessCB(MEMORY_READ_WRITE,memWRAccess,data);
         }
@@ -96,7 +96,7 @@ VM init(void *address, uint64_t trace_all,TaintTrace *taint_trace,vector<MemoryR
     if (trace_all){
         qvm.instrumentAllExecutableMaps();
         for (MemoryRange range : avoid_range) {
-          qvm.removeInstrumentedRange(range.minAddr,range.maxAddr);
+          qvm.removeInstrumentedRange(range.min,range.max);
         }
         // qvm.setInstrumentationMode(InstrumentationMode::Blacklist);
         // qvm.addInstrumentedRange((rword) free, (rword) free + 8);

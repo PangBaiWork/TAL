@@ -17,7 +17,7 @@ Instruction::~Instruction() {
     cs_close(&handle);
 }
 
-std::vector<std::string> Instruction::disassemble(uintptr_t address, size_t size) const {
+std::vector<std::string> Instruction::Disassemble(uintptr_t address, size_t size) const {
     std::vector<std::string> result;
     const uint8_t *code = reinterpret_cast<const uint8_t *>(address);
 
@@ -36,7 +36,7 @@ std::vector<std::string> Instruction::disassemble(uintptr_t address, size_t size
     return result;
 }
 
-std::string Instruction::disassemble(uintptr_t address) const {
+std::string Instruction::Disassemble(uintptr_t address) const {
     const uint8_t *code = reinterpret_cast<const uint8_t *>(address);
 
     cs_insn *insn;
@@ -51,7 +51,7 @@ std::string Instruction::disassemble(uintptr_t address) const {
     return result;
 }
 
- cs_insn * Instruction::analyzeInst(uintptr_t address)  {
+ cs_insn * Instruction::AnalyzeInst(uintptr_t address)  {
     const uint8_t *code = reinterpret_cast<const uint8_t *>(address);
     if (inst != nullptr) {
         cs_free(inst, 1);
@@ -72,60 +72,60 @@ std::string Instruction::disassemble(uintptr_t address) const {
 
 
 
-bool TaintMemory::insert(uint64_t minAddr, uint64_t maxAddr) {
+bool TaintMemory::insert(uint64_t min, uint64_t max) {
     // 0-8 not 8
-    maxAddr-=1;
-    if (minAddr > maxAddr) return false;
+    max-=1;
+    if (min > max) return false;
 
     // 找到第一个起始地址 >= minAddr 的区间
-    auto it = memoryMap.lower_bound(minAddr);
+    auto it = mmap.lower_bound(min);
 
     // 检查与前一个区间是否重叠
-    if (it != memoryMap.begin()) {
+    if (it != mmap.begin()) {
         auto prev = std::prev(it);
-        if (prev->second.maxAddr >= minAddr)
+        if (prev->second.max >= min)
             return false; // 重叠
     }
 
     // 检查与当前 it 是否重叠
-    if (it != memoryMap.end() && it->first <= maxAddr)
+    if (it != mmap.end() && it->first <= max)
         return false;
 
     // 不重叠，可以插入
-    memoryMap[minAddr] = {minAddr, maxAddr};
+    mmap[min] = {min, max};
     return true;
 }
 
-bool TaintMemory::insertBySize(uint64_t baseAddr, int size){
-    return insert(baseAddr,baseAddr+size);
+bool TaintMemory::InsertBySize(uint64_t base, int size){
+    return insert(base,base+size);
 }
 
 // 查找 targetaddr 所在区间
-const MemoryRange* TaintMemory::find(uint64_t targetaddr) const {
-    auto it = memoryMap.upper_bound(targetaddr);
-    if (it == memoryMap.begin())
+const MemoryRange* TaintMemory::find(uint64_t target) const {
+    auto it = mmap.upper_bound(target);
+    if (it == mmap.begin())
         return nullptr; // target 小于所有区间
 
     it = std::prev(it);
-    if (targetaddr >= it->second.minAddr && targetaddr <= it->second.maxAddr)
+    if (target >= it->second.min && target <= it->second.max)
         return &it->second;
     return nullptr;
 }
 
 // 删除一个区间（通过 minAddr）
-bool TaintMemory::erase(uint64_t minAddr) {
+bool TaintMemory::erase(uint64_t addr) {
     // auto it = find(minAddr);
     // // if (it == memoryMap.end()) return false;
     // if (it != nullptr)
     // memoryMap.erase(it);
-    auto it = memoryMap.upper_bound(minAddr);
-    if (it == memoryMap.begin())
+    auto it = mmap.upper_bound(addr);
+    if (it == mmap.begin())
         return false; // target 小于所有区间
 
     it = std::prev(it);
-    if (minAddr >= it->second.minAddr && minAddr <= it->second.maxAddr)
+    if (addr >= it->second.min && addr <= it->second.max)
     {
-        memoryMap.erase(it);
+        mmap.erase(it);
         return true;
     }
 
@@ -133,23 +133,23 @@ bool TaintMemory::erase(uint64_t minAddr) {
 }
 
 void TaintMemory::print() const {
-    for (auto &kv : memoryMap) {
-        std::cout << "[" << kv.second.minAddr << ", " << kv.second.maxAddr << "]\n";
+    for (auto &kv : mmap) {
+        std::cout << "[" << kv.second.min << ", " << kv.second.max << "]\n";
     }
 }
 
 
 
-void RegsState::setTaintReg(int idx,uint64_t memRef){
-    regs[idx].taintState = Taint;
-    regs[idx].memRef = memRef;
+void RegsState::SetTaintReg(int idx,uint64_t memRef){
+    regs[idx].state = Taint;
+    regs[idx].ref = memRef;
 }
-void RegsState::clearReg(int idx){
-    regs[idx].taintState = NoTaint;
-    regs[idx].memRef = 0;
+void RegsState::ClearReg(int idx){
+    regs[idx].state = NoTaint;
+    regs[idx].ref = 0;
 }
 
-bool RegsState::isTaintReg(int idx){
-    return regs[idx].taintState == Taint;
+bool RegsState::IsTaintReg(int idx){
+    return regs[idx].state == Taint;
 }
 

@@ -103,7 +103,7 @@ bool isTraceAll = false;
 
 MemoryRange *taintMemory=nullptr;
 PrintMode g_print_mode=ADDR_MODE;
-string *log_path=nullptr;
+std::string *log_path=nullptr;
 uint64_t g_base=0;
 GumCpuContext g_cpu_context;
 void* g_function;
@@ -134,7 +134,7 @@ char * g_taint_str=nullptr;
 //         : "rsp", "memory" // 告知编译器被修改的寄存器
 //     );
 //     // Print the register value
-//     std::cout << "replace rbp: " << toHex(rspvalue) << std::endl;
+//     std::cout << "replace rbp: " << ToHex(rspvalue) << std::endl;
 // #endif
 //
 //     LOGS("begin");
@@ -169,8 +169,8 @@ char * g_taint_str=nullptr;
 //
 //
 // // Print the register value
-// std::cout << "replace rsp: " << toHex(rspvalue) << std::endl;
-// std::cout << "replace rbp: " << toHex(rbpvalue) << std::endl;
+// std::cout << "replace rsp: " << ToHex(rspvalue) << std::endl;
+// std::cout << "replace rbp: " << ToHex(rbpvalue) << std::endl;
 // #endif
 
 
@@ -190,14 +190,14 @@ static void on_enter(GumInvocationContext *context, gpointer user_data) {
     auto *taint_trace = new TaintTrace(log_path, base_addr,g_print_mode);
 
     if (taintMemory)
-        taint_trace->addTaintMemory(*taintMemory);
+        taint_trace->AddTaintMemory(*taintMemory);
     else {
-        taint_trace->setTaintStr(g_taint_str);
+        taint_trace->SetTaintStr(g_taint_str);
     }
     //
     // QBDI::setLogPriority(QBDI::DEBUG);
     // QBDI::setLogFile("log.asm",true);
-    vector<MemoryRange> avoid_range={};
+    std::vector<MemoryRange> avoid_range={};
 
     // avoid_range.push_back(MemoryRange(base_addr+0x1710,base_addr+0x182d));
     QBDI::VM qvm = init(g_function,isTraceAll,taint_trace,avoid_range);
@@ -231,7 +231,7 @@ VISIBILITY_DEFAULT   void taint_trace(void *addr,bool trace_all,uint64_t taintAd
     g_print_mode=static_cast<PrintMode>(printMode);
     taintMemory = new MemoryRange(taintAddr,taintAddr + taintSize);
     g_interceptor = gum_interceptor_obtain();
-    g_listener = hookUtils::gum_attach(g_interceptor,addr, on_enter,nullptr, nullptr);
+    g_listener = HookUtils::gum_attach(g_interceptor,addr, on_enter,nullptr, nullptr);
     LOGE("hooked");
 }
 
@@ -243,7 +243,7 @@ VISIBILITY_DEFAULT   void taint_trace_str(void *addr,bool trace_all,char *taint_
     g_taint_str = new char[strlen(taint_str)+1];
     strcpy(g_taint_str,taint_str);
     g_interceptor = gum_interceptor_obtain();
-    g_listener = hookUtils::gum_attach(g_interceptor,addr, on_enter,nullptr, nullptr);
+    g_listener = HookUtils::gum_attach(g_interceptor,addr, on_enter,nullptr, nullptr);
     LOGE("hooked");
 }
 

@@ -35,9 +35,9 @@
 #define LOGE(fmt, ...) fprintf(stderr, "[TTD ERROR] " fmt "\n", ##__VA_ARGS__)
 #define LOGS(fmt, ...) fprintf(stdout, "[TTD] " fmt "\n", ##__VA_ARGS__)
 
-std::string readMemToHex(const void* ptr, size_t length);
-std::string toHex(uint64_t value);
+std::string ReadMemToHex(const void* ptr, size_t length);
+std::string ToHex(uint64_t value);
 
-int getSameStrLen(const char *str1, const char *str2);
+int GetSameStrLen(const char *str1, const char *str2);
 
 #endif //UTILS_H

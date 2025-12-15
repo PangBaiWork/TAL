@@ -53,7 +53,7 @@ struct MapItemInfo {
 
 
 
-class hookUtils{
+class HookUtils{
     public:
         static GumInvocationListener * gum_attach(GumInterceptor *interceptor,void *addr,GumInvocationCallback on_enter, GumInvocationCallback on_leave,void* func_data= nullptr);
         static void gum_replace(void* addr,void* replace,void** backup);
@@ -61,9 +61,9 @@ class hookUtils{
 
 private:
         // static GumInvocationListener * obtainListener();
-        static void empty_onEnter(GumInvocationContext * context,
+        static void empty_on_enter(GumInvocationContext * context,
                                   gpointer user_data);
-        static void empty_onLeave(GumInvocationContext * context,
+        static void empty_on_leave(GumInvocationContext * context,
                                   gpointer user_data);
 
 };

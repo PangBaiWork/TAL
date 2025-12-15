@@ -26,91 +26,80 @@ enum PrintMode {
 };
 inline  std::unordered_map<PrintMode, std::string> ModeName = {
   {ADDR_MODE,   "addr"},
-  {ASM_MODE, "asm"},
+  {ASM_MODE,    "asm"},
   {DEBUG_MODE,  "debug"},
   {TRACE_MODE,  "trace"},
 };
 
-using namespace std;
+// using namespace std;
 class TaintTrace {
  public:
-  TaintMemory taintMemory;
-  RegsState regsState;
+  TaintMemory memory;
+  RegsState state;
   uint64_t base;
-  PrintMode printMode = ADDR_MODE;
+  PrintMode mode = ADDR_MODE;
   std::ofstream log;
-  std::ofstream allLog;
-  Instruction disasmer;
-  int16_t rRegIdx = -1, wRegIdx = -1, rwRegIdx[2] = {-1, -1};  // for post reg
-  bool postInstFlag = false;
-  RegArray regNames;
-  char *taintStr = nullptr;
-  PrintMode getPrintMode() const { return printMode; }
-  void setPostInstFlag() { postInstFlag = true; }
-  void cleanPostInstFlag() { postInstFlag = false; }
-  inline bool isAddrMode() const { return printMode == ADDR_MODE; }
-  inline bool isAsmMode() const { return printMode == ASM_MODE; }
-  inline bool isDebugMode() const { return printMode == DEBUG_MODE; }
-  inline bool isTraceMode() const { return printMode == TRACE_MODE; }
-  inline bool  needFlush() const {
-    return isDebugMode();
-  }
-  bool checkTaintedStr(uint64_t addr) {
-    // LOGE("READ:%llx",addr);
-    if (!taintMemory.size() && taintStr && READABLE_ADDR < addr) {
-      auto ptr = reinterpret_cast<char *>(addr);
-      if (ptr[0] == taintStr[0] && ptr[1] == taintStr[1] &&
-          ptr[2] == taintStr[2] && ptr[3] == taintStr[3]) {
-        int len = getSameStrLen(ptr, taintStr);
-        LOGE("Insert Taint Memory: %s %d", ptr, len);
+  std::ofstream all_log;
+  Instruction disassembler;
+  int16_t reg_r = -1, reg_w = -1, reg_rw[2] = {-1, -1};  // for post reg
+  bool enable_post_inst = false;
+  RegArray reg_name;
+  char *taint_str = nullptr;
 
-        taintMemory.insertBySize(reinterpret_cast<uint64_t>(ptr), len);
-        return true;
-      }
-    }
-    return false;
-  }
-  void printReg(QBDI::GPRState *state);
-  QBDI::VMAction instTrace(QBDI::VM *vm, QBDI::GPRState *gprState,
-                           QBDI::FPRState *fprState);
-  void postInstTrace(QBDI::VM *vm, QBDI::GPRState *gprState,
-                     QBDI::FPRState *fprState);
-  void memoryTrace(QBDI::VM *vm, QBDI::GPRState *gprState,
-                   QBDI::FPRState *fprState);
-  void printMemoryOp(QBDI::GPRState *gpr, uint64_t offset,
-                     QBDI::MemoryAccess *memoryAccess, int wRegIdx = -1,
-                     int rRegIdx = -1);
-  TaintTrace(std::string *path, uint64_t base, PrintMode printMode);
+  void PrintReg(const QBDI::GPRState *state);
+  QBDI::VMAction InstTrace(const QBDI::VM *vm, const QBDI::GPRState *gpr,QBDI::FPRState *fpr);
+  void PostInstTrace(QBDI::VM *vm, QBDI::GPRState *gpr,QBDI::FPRState *fpr);
+  void MemoryTrace(QBDI::VM *vm, QBDI::GPRState *gpr,QBDI::FPRState *fpr);
+  void PrintMemoryOp(QBDI::GPRState *gpr, uint64_t offset,
+                     QBDI::MemoryAccess *access, int reg_w = -1,int reg_r= -1);
+  TaintTrace(const std::string *path, uint64_t base, PrintMode mode);
 
+  PrintMode GetPrintMode() const { return mode; }
+  void SetPostInstFlag() { enable_post_inst = true; }
+  void CleanPostInstFlag() { enable_post_inst = false; }
+  bool IsAddrMode() const { return mode == ADDR_MODE; }
+  bool IsAsmMode() const { return mode == ASM_MODE; }
+  bool IsDebugMode() const { return mode == DEBUG_MODE; }
+  bool IsTraceMode() const { return mode == TRACE_MODE; }
+  bool  NeedFlush() const { return IsDebugMode();}
   ~TaintTrace() {
     log.close();
   }
-  bool isValid(int64_t input) {
-    return input>=0;
-  }
-  bool setTaintReg(int regIdx,uint64_t memRef) {
-    // if (regIdx==15)log<<"set taint rsp"<<endl;
-    regsState.setTaintReg(regIdx,memRef);
+  static bool IsValid(const int64_t input) {return input>=0;}
+  bool SetTaintReg(const int reg, const uint64_t ref) {
+    state.SetTaintReg(reg,ref);
     return true;
   }
-  bool isTaintReg(int regIdx) {
-    if (!isValid(regIdx))return false;
-    return regsState.isTaintReg(regIdx);
+  bool IsTaint(const int reg) {
+    if (!IsValid(reg))return false;
+    return state.IsTaintReg(reg);
   }
-
-  void addTaintMemory(uint64_t addr,int size){
-    taintMemory.insertBySize(addr,size);
+  void AddTaintMemory(const uint64_t addr, const int size){
+    memory.InsertBySize(addr,size);
   }
-
-  void addTaintMemory(const MemoryRange & memoryRange){
-    taintMemory.insert(memoryRange.minAddr,memoryRange.maxAddr);
+  void AddTaintMemory(const MemoryRange & range){
+    memory.insert(range.min,range.max);
   }
-  void setTaintStr(char *str) {
+  void SetTaintStr(char *str) {
     if (str) {
-      taintStr=new char[strlen(str)+1];
-      strcpy(taintStr,str);
-      LOGE("TaintStr set: %s %s",taintStr,str);
+      taint_str=new char[strlen(str)+1];
+      strcpy(taint_str,str);
+      LOGE("TaintStr set: %s %s",taint_str,str);
     }
+  }
+
+  bool CheckTaintedStr(const uint64_t addr) {
+    if (!memory.size() && taint_str && READABLE_ADDR < addr) {
+      if (auto ptr = reinterpret_cast<char *>(addr);
+          ptr[0] == taint_str[0] && ptr[1] == taint_str[1] &&
+          ptr[2] == taint_str[2] && ptr[3] == taint_str[3]) {
+            const int len = GetSameStrLen(ptr, taint_str);
+            LOGE("Insert Taint Memory: %s %d", ptr, len);
+            memory.InsertBySize(reinterpret_cast<uint64_t>(ptr), len);
+            return true;
+          }
+    }
+    return false;
   }
 
 };

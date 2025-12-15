@@ -15,7 +15,7 @@ using namespace std;
 
 
 
-void hookUtils::gum_replace(void* addr, void* replace, void** backup){
+void HookUtils::gum_replace(void* addr, void* replace, void** backup){
     GumInterceptor *interceptor;
     interceptor = gum_interceptor_obtain();
     gum_interceptor_begin_transaction(interceptor);
@@ -27,11 +27,11 @@ void hookUtils::gum_replace(void* addr, void* replace, void** backup){
 
 
 // GumInvocationListener *listener=nullptr;
-GumInvocationListener *hookUtils::gum_attach(GumInterceptor *interceptor,void* addr, GumInvocationCallback on_enter, GumInvocationCallback on_leave, void* func_data ){
+GumInvocationListener *HookUtils::gum_attach(GumInterceptor *interceptor,void* addr, GumInvocationCallback on_enter, GumInvocationCallback on_leave, void* func_data ){
 
     gum_interceptor_begin_transaction(interceptor);
-    if (on_enter == nullptr) on_enter = hookUtils::empty_onEnter;
-    if (on_leave == nullptr) on_leave = hookUtils::empty_onLeave;
+    if (on_enter == nullptr) on_enter = HookUtils::empty_on_enter;
+    if (on_leave == nullptr) on_leave = HookUtils::empty_on_leave;
     void* data = malloc(sizeof(void*));
     auto listener = gum_make_call_listener(on_enter,on_leave, data, nullptr);
 
@@ -86,14 +86,14 @@ void hookUtils::hookLinker(GumInvocationCallback on_leave) {
 
 }
 */
-void hookUtils::empty_onEnter(GumInvocationContext * context,
+void HookUtils::empty_on_enter(GumInvocationContext * context,
                               gpointer user_data) {
 
 //    LOGD("call empty_onEnter");
 
 }
 
-void hookUtils::empty_onLeave(GumInvocationContext * context,
+void HookUtils::empty_on_leave(GumInvocationContext * context,
                               gpointer user_data) {
 //    LOGD("call empty_onLeave");
 
