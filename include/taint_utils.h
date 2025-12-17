@@ -101,44 +101,132 @@ private:
 };
 
 
+// class RegArray {
+// public:
+//     // 构造函数，接受数组指针
+//     RegArray(){
+//     }
+//
+//     void SetGPRArray(const char* const names[],RegsState &state) {
+//         // 假设构造函数在调用时，保证 names 有效且长度不超过 maxRegisters
+//         this->names=names;
+//         this->state=&state;
+//     }
+//
+//     std::string operator[](int idx) const {
+//         if (idx >=std::extent_v<decltype(QBDI::GPR_NAMES)> || names[idx] == nullptr) {
+//            return  "";
+//         }
+//         if (state->IsTaintReg(idx)) {
+//             return "*"+std::string(names[idx]) ;
+//         }
+//         return names[idx];
+//     }
+//     std::string get(int idx) const {
+//
+//         if (idx < QBDI::NUM_GPR) {
+//             return names[idx];
+//         }
+//         if (idx >= 160) { // x86_64 xmm0
+//             std::string reg = std::to_string((idx - 160) / 16);
+//             return "XMM" + reg;
+//         }
+//         return "unkown";
+//     }
+//
+// private:
+//     const char* const* names{};   // 指向字符指针数组，不复制数据
+//     RegsState *state{};
+// };
+
 class RegArray {
 public:
-    // 构造函数，接受数组指针
-    RegArray(){
-    }
+    RegArray() = default;
 
-    void SetGPRArray(const char* const names[],RegsState &state) {
-        // 假设构造函数在调用时，保证 names 有效且长度不超过 maxRegisters
-        this->names=names;
-        this->state=&state;
-    }
+    // 初始化：传入原始寄存器名数组（不带'*'），长度为 QBDI::NUM_GPR
+    void SetGPRArray(const char* const inNames[], RegsState& state) {
+        this->state = &state;
 
-    std::string operator[](int idx) const {
-        if (idx >=std::extent_v<decltype(QBDI::GPR_NAMES)> || names[idx] == nullptr) {
-           return  "";
+        // 先计算总长度：每个名需要 len + 2（1 个 '*' + 1 个 '\0'）
+        size_t totalLen = 0;
+        for (int i = 0; i < QBDI::NUM_GPR; ++i) {
+            if (inNames[i] != nullptr) {
+                totalLen += std::strlen(inNames[i]) + 2;
+            }
         }
+
+        // 分配连续缓冲区
+        buffer.reset(new char[totalLen]);
+        names.resize(QBDI::NUM_GPR, nullptr);
+
+        // 依次拷贝为 "*name\0"
+        char* p = buffer.get();
+        for (int i = 0; i < QBDI::NUM_GPR; ++i) {
+            const char* src = inNames[i];
+            if (src == nullptr) {
+                names[i] = nullptr;
+                continue;
+            }
+
+            size_t len = std::strlen(src);
+            names[i] = p;        // 指向以 '*' 开头的位置
+            *p++ = '*';          // 前缀
+            std::memcpy(p, src, len);
+            p += len;
+            *p++ = '\0';
+        }
+    }
+
+    // 污点寄存器：返回从 0 开始的 char\*（带 '*'）
+    // 非污点寄存器：返回从 1 开始的 char\*（跳过 '*'）
+    const char* operator[](int idx) const {
+        if (idx < 0 || idx >= static_cast<int>(names.size())) {
+            return nullptr;
+        }
+        const char* base = names[idx];
+        if (base == nullptr || state == nullptr) {
+            return nullptr;
+        }
+
         if (state->IsTaintReg(idx)) {
-            return "*"+std::string(names[idx]) ;
+            // 污点：从索引 0 开始（'*' 位置）
+            return base;
+        } else {
+            // 非污点：从索引 1 开始（跳过 '*'）
+            return base + 1;
         }
-        return names[idx];
     }
-    std::string get(int idx) const {
+
+    // 保留原来的 get 逻辑（不区分污点，仅返回寄存器名）
+    const char* get(int idx) const {
+        if (idx < 0) {
+            return nullptr;
+        }
 
         if (idx < QBDI::NUM_GPR) {
-            return names[idx];
+            const char* base = (idx < static_cast<int>(names.size())) ? names[idx] : nullptr;
+            // 跳过 '*'，只返回纯寄存器名
+            return (base != nullptr) ? (base + 1) : nullptr;
         }
+
+        // 其他寄存器（如 XMM），直接用静态缓冲生成
         if (idx >= 160) { // x86_64 xmm0
-            std::string reg = std::to_string((idx - 160) / 16);
-            return "XMM" + reg;
+            static thread_local char xmmName[16];
+            int xmmIndex = (idx - 160) / 16;
+            std::snprintf(xmmName, sizeof(xmmName), "XMM%d", xmmIndex);
+            return xmmName;
         }
+
         return "unkown";
     }
 
 private:
-    const char* const* names{};   // 指向字符指针数组，不复制数据
-    RegsState *state{};
+    // 连续内存缓冲区，存 "*name\0"
+    std::unique_ptr<char[]> buffer;
+    // 每个寄存器对应的指针，指向缓冲区中以 '*' 开头的位置
+    std::vector<const char*> names;
+    RegsState* state{nullptr};
 };
-
 
 
 

@@ -41,7 +41,7 @@ class TaintTrace {
   std::ofstream log;
   std::ofstream all_log;
   Instruction disassembler;
-  int16_t reg_r = -1, reg_w = -1, reg_rw[2] = {-1, -1};  // for post reg
+  int16_t rreg = -1, wreg = -1, rwreg[2] = {-1, -1};  // for post reg
   bool enable_post_inst = false;
   RegArray reg_name;
   char *taint_str = nullptr;
@@ -53,7 +53,9 @@ class TaintTrace {
   void PrintMemoryOp(QBDI::GPRState *gpr, uint64_t offset,
                      QBDI::MemoryAccess *access, int reg_w = -1,int reg_r= -1);
   TaintTrace(const std::string *path, uint64_t base, PrintMode mode);
-
+  // Taint reg name
+  const char *TName(const int reg) const {return reg_name[reg];}
+  const char *RegName(const int idx) const {return reg_name.get(idx);}
   PrintMode GetPrintMode() const { return mode; }
   void SetPostInstFlag() { enable_post_inst = true; }
   void CleanPostInstFlag() { enable_post_inst = false; }
@@ -86,6 +88,9 @@ class TaintTrace {
       strcpy(taint_str,str);
       LOGE("TaintStr set: %s %s",taint_str,str);
     }
+  }
+  void PrintRangeOp() {
+
   }
 
   bool CheckTaintedStr(const uint64_t addr) {
