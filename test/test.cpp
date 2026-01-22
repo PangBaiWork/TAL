@@ -79,7 +79,24 @@ void reg_jmp_test() {
         sum+=i;
     }
 }
-
+void free_test() {
+  for (int i=0;i<100;i++) {
+    unsigned char* ptr = (unsigned char*)malloc(200+i);
+    if (ptr) {
+      free(ptr);
+    }
+  }
+}
+void memcpy_test() {
+  unsigned char source[0x200];
+  unsigned char destination[0x200];
+  memcpy(destination, source, 0x200);
+}
+#include <time.h>
+uint64_t time_test() {
+  time_t  now = time(NULL);
+  return now;
+}
 void btea(uint32_t * v, int n, uint32_t const key[4]) {
 
     //v 为数据，n 为数据长度 (负时为解密)，key 为密钥
@@ -122,10 +139,18 @@ void btea(uint32_t * v, int n, uint32_t const key[4]) {
         sum -= DELTA;
       } while (--rounds);
     }
-    void (*funcPtr)();
-    funcPtr=reg_jmp_test;
+
+
+
+  // free_test();
+  memcpy_test();
+  time_test();
+  void (*funcPtr)();
+  funcPtr=reg_jmp_test;
 
   funcPtr();
+  reg_jmp_test();
+    // LOGE("jmp reg function");
   // simulate_movups_instruction();
 }
 #include <stdio.h>
@@ -133,7 +158,7 @@ void btea(uint32_t * v, int n, uint32_t const key[4]) {
 
 
 
-
+#include "taint_analyze.h"
 int main()
 {
 #ifdef _MSC_VER
@@ -145,17 +170,16 @@ int main()
     unsigned char key[16]="11111111";
     //printf("%p",btea);
     // taint_trace((void*)&btea,1,(uint64_t)flag,16,2);
-    taint_trace_str((void*)&btea,1,(char*)flag,1);
-    btea((uint32_t*)flag,4,(uint32_t*)key);
-    return  0x114514;
+    // setbuf(stdout, NULL);
+    // taint_trace_str((uint64_t)&btea,1,(char*)flag,TRACE_MODE);
+    trace((uint64_t)&btea,0,1,ADDR_MODE);
+    add_taint_range((uint64_t)flag,16);
     LOGD("test finish");
-    // int sum=0;
-    // for (int i = 0; i < 10000000000; i++)
-    // {
-    //     sum+=i;
-    //
-    // }
-    // return sum;
+    btea((uint32_t*)flag,4,(uint32_t*)key);
+    LOGD("test finish");
+    return  114514;
+
+
 
 }
 

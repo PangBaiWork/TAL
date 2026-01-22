@@ -45,7 +45,7 @@ struct extends {
 
 
 
- QBDI::VM init(void *address,uint64_t trace_all = false,TaintTrace *taintTrace= nullptr,std::vector<MemoryRange> avoid_range={});
+ QBDI::VM init(void *address,TaintTrace *tracer);
 
 
 #endif //QBDIRECORDER_VM_H

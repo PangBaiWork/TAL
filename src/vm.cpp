@@ -4,6 +4,8 @@
 
 #include "vm.h"
 
+
+
 #include <cassert>
 #include <iostream>
 #include <sstream>
@@ -20,6 +22,7 @@ using namespace QBDI;
 
 
 
+void removeConflictModule(VM& vm);
 
 VMAction postInstruction(VM *vm, GPRState *gprState, FPRState *fprState, void *data) {
     auto extend_data = static_cast<extends *>(data);
@@ -74,89 +77,119 @@ VMAction memWRAccess(VM *vm, GPRState *gprState, FPRState *fprState, void *data)
 }
 
 
-VM init(void *address, uint64_t trace_all,TaintTrace *taint_trace,vector<MemoryRange> avoid_range) {
+VM init(void *address,TaintTrace *tracer) {
     VM qvm{};
-    extends *data;
-
-    if (taint_trace) {
-        data = new extends(taint_trace);
-        if (!taint_trace->IsTraceMode())
-        {
-          qvm.addMemAccessCB(MEMORY_READ_WRITE,memWRAccess,data);
-        }
-    } else {
-        data = new extends();
+    auto *data = new extends(tracer);
+    if (!tracer->IsTraceMode())
+    {
+        qvm.addMemAccessCB(MEMORY_READ_WRITE,memWRAccess,data);
     }
 
-
     qvm.addCodeCB(POSTINST, postInstruction, data);
-    qvm.addCodeCB(PREINST,preInstruction,data);
+    qvm.addCodeCB(PREINST, preInstruction, data);
 
 
-    if (trace_all){
+    if (tracer->trace_all){
         qvm.instrumentAllExecutableMaps();
-        for (MemoryRange range : avoid_range) {
-          qvm.removeInstrumentedRange(range.min,range.max);
+        for (const MemoryRange & range : tracer->avoid_range) {
+            qvm.removeInstrumentedRange(range.min,range.max);
         }
-        // qvm.setInstrumentationMode(InstrumentationMode::Blacklist);
-        // qvm.addInstrumentedRange((rword) free, (rword) free + 8);
-        // qvm.addInstrumentedRange((rword) malloc, (rword) malloc + 8);
-        // qvm.addInstrumentedRange((rword) realloc, (rword) realloc + 8);
-        // qvm.addInstrumentedRange((rword) calloc, (rword) calloc + 8);
-        // qvm.addInstrumentedRange((rword) memset, (rword) memset + 8);
-        // return qvm;
-
-        // qvm.enableBlackListMode();
     }else {
         qvm.addInstrumentedModuleFromAddr(reinterpret_cast<rword>(address));
     }
-    std::string module_name[] ={
-        "libc.so.6",
-        "libstdc++.so.6.0.34",
-        "libdl.so.2",
-        "libgcc_s.so.1",
-        "libpthread.so.0",
-        "libdl.so.2",
-        "ld-linux-x86-64.so.2",
-        "ntdll.dll",
-        "libartbase.so",
-        "libc++.so",
-        "libart.so",
-        "libEGL.so",
-        "libGLESv1_CM.so",
-           "USER32.dll",
-      "user32.dll",
-      "KERNEL32.dll",
-      "kernel32.dll",
-    };
-    for (const auto& name : module_name) {
-        bool result = qvm.removeInstrumentedModule(name);
-        LOGD("remove %s result %d",name.c_str(),result);
-    }
 
-#ifndef  QBDI_PLATFORM_WINDOWS
-    // This is not MSVC compiler
-    qvm.removeInstrumentedRange((rword) pthread_mutex_init, (rword) pthread_mutex_init + 8);
-
-    qvm.removeInstrumentedRange((rword) pthread_mutex_lock, (rword) pthread_mutex_lock + 8);
-    qvm.removeInstrumentedRange((rword) pthread_mutex_unlock, (rword) pthread_mutex_unlock + 8);
-    qvm.removeInstrumentedRange((rword) pthread_getspecific, (rword) pthread_getspecific + 8);
-    qvm.removeInstrumentedRange((rword) pthread_atfork, (rword) pthread_atfork + 8);
-    qvm.removeInstrumentedRange((rword) pthread_create, (rword) pthread_create + 8);
-#endif
-    qvm.removeInstrumentedRange((rword) free, (rword) free + 8);
-    qvm.removeInstrumentedRange((rword) malloc, (rword) malloc + 8);
-    qvm.removeInstrumentedRange((rword) realloc, (rword) realloc + 8);
-    qvm.removeInstrumentedRange((rword) calloc, (rword) calloc + 8);
-    qvm.removeInstrumentedRange((rword) memset, (rword) memset + 8);
-
+     removeConflictModule(qvm);
 
 
     return qvm;
 }
 
+#ifdef  QBDI_PLATFORM_WINDOWS
+
+#include <shlwapi.h>
+#include <tlhelp32.h>
+#include "QBDI/Memory.h"
+void removeConflictModule(VM& vm) {
+  size_t size;
+  qbdi_MemoryMap *modules=qbdi_getCurrentProcessMaps(false, &size);
+  for (size_t i = 0; i < size; i++) {
+    if ((modules[i].permission & QBDI_PF_EXEC) &&
+        (StrStrIA(modules[i].name, "advapi") ||
+         StrStrIA(modules[i].name, "combase") ||
+         StrStrIA(modules[i].name, "comctl32") ||
+         StrStrIA(modules[i].name, "comdlg") ||
+         StrStrIA(modules[i].name, "gdi32") ||
+         StrStrIA(modules[i].name, "gdiplus") ||
+         StrStrIA(modules[i].name, "imm32") ||
+         StrStrIA(modules[i].name, "kernel") ||
+         StrStrIA(modules[i].name, "msvcp") ||
+         StrStrIA(modules[i].name, "msvcrt") ||
+         StrStrIA(modules[i].name, "ntdll") ||
+         StrStrIA(modules[i].name, "ole32") ||
+         StrStrIA(modules[i].name, "oleaut") ||
+         StrStrIA(modules[i].name, "rpcrt") ||
+         StrStrIA(modules[i].name, "sechost") ||
+         StrStrIA(modules[i].name, "shcore") ||
+         StrStrIA(modules[i].name, "shell32") ||
+         StrStrIA(modules[i].name, "shlwapi") ||
+         StrStrIA(modules[i].name, "ucrtbase") ||
+         StrStrIA(modules[i].name, "user32") ||
+         StrStrIA(modules[i].name, "uxtheme") ||
+         StrStrIA(modules[i].name, "vcruntime") ||
+         StrStrIA(modules[i].name, "win32u") || modules[i].name[0] == 0)) {
+         vm.removeInstrumentedRange(modules[i].start, modules[i].end);
+         }
+  }
+}
+
+#endif
+
+#ifdef QBDI_PLATFORM_LINUX
+#include "QBDI/Memory.h"
+int tmp=0;
+void removeConflictModule(VM& vm) {
+  size_t size;
+  qbdi_MemoryMap *modules=qbdi_getCurrentProcessMaps(false, &size);
+  for (size_t i = 0; i < size; i++) {
+    LOGD("module:%s",modules[i].name);
+    if (
+      // (modules[i].permission & QBDI_PF_EXEC) &&
+        (strstr(modules[i].name, "libc-2.")     ||
+         strstr(modules[i].name, "libc.so")    ||
+         strstr(modules[i].name, "libstdc++")   ||
+         strstr(modules[i].name, "ld-2.")       ||
+         strstr(modules[i].name, "ld-linux-")   ||
+         strstr(modules[i].name, "libpthread-") ||
+         strstr(modules[i].name, "libcofi") || modules[i].name[0] == 0)) {
+
+            LOGD("removeConflictModule: %s %llx %llx",modules[i].name,modules[i].start,modules[i].end);
+            vm.removeInstrumentedRange(modules[i].start, modules[i].end);
+         }
+  }
+}
 
 
+#endif
+
+#ifdef QBDI_PLATFORM_ANDROID
+#include "QBDI/Memory.h"
+void removeConflictModule(VM& vm) {
+  size_t size;
+  qbdi_MemoryMap *modules=qbdi_getCurrentProcessMaps(false, &size);
+  for (size_t i = 0; i < size; i++) {
+    LOGD("module:%s",modules[i].name);
+    if ((modules[i].permission & QBDI_PF_EXEC) &&
+        (strstr(modules[i].name, "libart.so")       ||
+         strstr(modules[i].name, "libEGL.so")       ||
+         strstr(modules[i].name, "libc++.so")        ||
+         strstr(modules[i].name, "libc.so")        ||
+         strstr(modules[i].name, "libGLESv1_CM.so") ||modules[i].name[0] == 0)) {
+            LOGD("removeConflictModule: %s",modules[i].name);
+            vm.removeInstrumentedRange(modules[i].start, modules[i].end);
+         }
+  }
+}
+#endif
 
 
 

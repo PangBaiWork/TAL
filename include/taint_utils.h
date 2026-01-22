@@ -4,13 +4,15 @@
 
 #ifndef EZMYDROID_TAINTUTILS_H
 #define EZMYDROID_TAINTUTILS_H
-#include "QBDI/State.h"
-
-#include "frida-gum.h"
-#include <string>
-#include <vector>
+#include <cstring>
 #include <iostream>
 #include <map>
+#include <memory>
+#include <string>
+#include <vector>
+
+#include "QBDI/State.h"
+#include "frida-gum.h"
 
 #define  REGS_COUNT 272
 #define TAINT_DEBUG 0
@@ -66,7 +68,7 @@ public:
     // 插入新区间，返回是否成功（false = 与已有区间重叠）
     bool insert(uint64_t min, uint64_t max);
 
-    bool InsertBySize(uint64_t base, int size);
+    bool InsertBySize(uint64_t base, uint64_t size);
 
     // 查找 targetaddr 所在区间
     const MemoryRange* find(uint64_t target) const;

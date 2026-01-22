@@ -30,11 +30,10 @@ void HookUtils::gum_replace(void* addr, void* replace, void** backup){
 GumInvocationListener *HookUtils::gum_attach(GumInterceptor *interceptor,void* addr, GumInvocationCallback on_enter, GumInvocationCallback on_leave, void* func_data ){
 
     gum_interceptor_begin_transaction(interceptor);
-    if (on_enter == nullptr) on_enter = HookUtils::empty_on_enter;
-    if (on_leave == nullptr) on_leave = HookUtils::empty_on_leave;
+    if (on_enter == nullptr) on_enter = empty_on_enter;
+    if (on_leave == nullptr) on_leave = empty_on_leave;
     void* data = malloc(sizeof(void*));
     auto listener = gum_make_call_listener(on_enter,on_leave, data, nullptr);
-
     gum_interceptor_attach(interceptor,addr,listener, func_data,GUM_ATTACH_FLAGS_NONE);
     gum_interceptor_end_transaction(interceptor);
     return listener;

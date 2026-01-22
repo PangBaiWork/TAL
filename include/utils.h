@@ -5,27 +5,28 @@
 #ifndef UTILS_H
 #define UTILS_H
 
-#include <sstream>
-
+#include <chrono>
 #include <iomanip>
 #include <iostream>
+#include <sstream>
 
-#include <chrono>
+#include "QBDI/State.h"
+#include "frida-gum.h"
 #if defined(__GNUC__) || defined(__clang__)
-    #define VISIBILITY_DEFAULT  extern "C" __attribute__((visibility("default")))
+    #define C_EXPORT  extern "C" __attribute__((visibility("default")))
 #elif defined(_MSC_VER)
-    #define VISIBILITY_DEFAULT extern "C"  __declspec(dllexport)
+    #define C_EXPORT extern "C"  __declspec(dllexport)
 #else
-    #define VISIBILITY_DEFAULT
+    #define C_EXPORT
 #endif
 
 // 构造函数属性
 #if defined(__GNUC__) || defined(__clang__)
-    #define CONSTRUCTOR_ATTR __attribute__((constructor))
+    #define C_INIT __attribute__((constructor))
 #elif defined(_MSC_VER)
-    #define CONSTRUCTOR_ATTR
+    #define C_INIT
 #else
-    #define CONSTRUCTOR_ATTR
+    #define C_INIT
 #endif
 
 // 格式化字符串的 LOGD 宏
@@ -37,7 +38,8 @@
 
 std::string ReadMemToHex(const void* ptr, size_t length);
 std::string ToHex(uint64_t value);
-
+void syn_reg_gum(GumCpuContext *cpu, QBDI::GPRState *state, bool F2Q);
 int GetSameStrLen(const char *str1, const char *str2);
-
+void print_frida_reg(GumCpuContext *cpu);
+void print_qbdi_reg(QBDI::GPRState *state);
 #endif //UTILS_H

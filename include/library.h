@@ -6,16 +6,16 @@
 #define LIBRARY_H
 #include "utils.h"
 
-#include "stdint.h"
+#include <cstdint>
 
-VISIBILITY_DEFAULT void attd(void *target_addr);
-VISIBILITY_DEFAULT void attd_trace(void *addr, bool trace_all);
-VISIBILITY_DEFAULT void taint_trace(void *addr, bool trace_all,
-                                    uint64_t taintAddr, int taintSize,
-                                    int traceMode);
 
-VISIBILITY_DEFAULT void attd_call(void *target_addr);
-VISIBILITY_DEFAULT void taint_trace_str(void *addr, bool trace_all,
-                                        char *taint_str, int printMode);
+C_EXPORT void taint_trace(uint64_t addr, bool all,
+                                    uint64_t taint_addr, int taint_size,
+                                    int mode);
+C_EXPORT void taint_trace_str(uint64_t addr,bool all,char *taint_str,int mode);
 
+C_EXPORT void trace(uint64_t addr, uint64_t end, bool all,
+                    int mode) ;
+C_EXPORT bool remove_range(uint64_t start, uint64_t size);
+C_EXPORT bool add_taint_range(uint64_t addr, uint64_t size);
 #endif // LIBRARY_H

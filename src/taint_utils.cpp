@@ -96,7 +96,7 @@ bool TaintMemory::insert(uint64_t min, uint64_t max) {
     return true;
 }
 
-bool TaintMemory::InsertBySize(uint64_t base, int size){
+bool TaintMemory::InsertBySize(uint64_t base, uint64_t size){
     return insert(base,base+size);
 }
 
@@ -152,4 +152,5 @@ void RegsState::ClearReg(int idx){
 bool RegsState::IsTaintReg(int idx){
     return regs[idx].state == Taint;
 }
+
 

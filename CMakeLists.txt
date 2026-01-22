@@ -3,8 +3,11 @@
 
 cmake_minimum_required(VERSION 3.22.1)
 
-# Setting Android Build
-#set(CMAKE_SYSTEM_NAME ANDROID)
+
+set(QBDI_ARCH "X86_64")
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 
 if(CMAKE_HOST_SYSTEM_NAME MATCHES "Linux")
     set(QBDI_PLATFORM "linux")
@@ -17,10 +20,20 @@ else()
     message("current platform: unkonw ")
 endif()
 
+if(ANDROID)
+    if(NOT ANDROID_NDK)
+        message(FATAL_ERROR "ANDROID_NDK is not set")
+    endif()
+    set(QBDI_PLATFORM "android")
+    set(QBDI_ARCH "AARCH64")
+
+    message(STATUS "NDK version: ${ANDROID_NDK_VERSION}")
+    message(STATUS "Android API level: ${ANDROID_PLATFORM}")
+endif()
+
 
 
 set(QBDI_LOG_DEBUG ON)
-set(QBDI_ARCH "X86_64")
 set(CMAKE_BUILD_PARALLEL_LEVEL 8)
 set(CMAKE_BUILD_TYPE Debug)
 set(TARGET_NAME "attd")
@@ -48,23 +61,12 @@ else(QBDI_PLATFORM STREQUAL "linux" OR QBDI_PLATFORM STREQUAL "android")
     message(STATUS "Linux or Android")
     set(FRIDA_LIB "libfrida-gum.a")
     set(QBDI_LIB "libQBDI.a")
-    set(CMAKE_CROSSCOMPILING "FALSE")
-
     set(CMAKE_CXX_FLAGS_RELEASE " -DNDEBUG -ffast-math -flto -fomit-frame-pointer -funroll-loops -fno-stack-protector")
     set(ASM_FILES "")
 endif()
 
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-# 优化编译选项
-#set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -ffast-math -flto -fomit-frame-pointer -funroll-loops -fno-stack-protector")
 
 add_compile_definitions(ULTRA_FAST_MODE=1)
-#add_library(QBDI_static STATIC IMPORTED)
-#set_target_properties(QBDI_static PROPERTIES IMPORTED_LOCATION
-#        ${CMAKE_CURRENT_SOURCE_DIR}/cmake-build-visualstudio/qbdi-src/QBDI/${QBDI_LIB})
-
 
 add_subdirectory(qbdi-src)
 
@@ -112,24 +114,7 @@ if(NOT QBDI_PLATFORM STREQUAL "windows")
     set(CMAKE_BUILD_TYPE Debug)
 endif ()
 set(CMAKE_BUILD_TYPE Debug)
-#set(CMAKE_BUILD_TYPE "RELEASE")
 
-#set(CMAKE_CXX_VISIBILITY_PRESET hidden)
-#set(CMAKE_C_VISIBILITY_PRESET hidden)
-
-## 关闭C++特性
-#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-inline")
-#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-exceptions")
-#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-rtti")
-#
-#set(CMAKE_C_FLAGS_RELEASE     "${CMAKE_C_FLAGS_RELEASE}   -fvisibility=hidden")
-#set(CMAKE_CXX_FLAGS_RELEASE   "${CMAKE_CXX_FLAGS_RELEASE} -fvisibility=hidden")
-## 删除调试符号
-#set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -s")
-#set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -s")
-## 开启空间优化
-#set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -Os")
-#set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -Os")
 
 target_link_options(${TARGET_NAME} PRIVATE -Wl,--exclude-libs=ALL -Wall -Wextra)
 
@@ -140,7 +125,6 @@ target_link_libraries(${TARGET_NAME}_static
 )
 
 target_link_libraries(${TARGET_NAME}
-
         frida-gum
         QBDI_static
 )
@@ -149,6 +133,7 @@ add_executable(${TARGET_NAME}_test
         ${FILE_SOURCES}
         test/test.cpp
 )
+
 if(QBDI_PLATFORM STREQUAL "windows")
     target_link_libraries(${TARGET_NAME}_test
             ntdll.lib

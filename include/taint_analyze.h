@@ -34,7 +34,11 @@ inline  std::unordered_map<PrintMode, std::string> ModeName = {
 // using namespace std;
 class TaintTrace {
  public:
+  bool trace_all = false;
+  uint64_t trace_end = 0;
   TaintMemory memory;
+  std::vector<MemoryRange> avoid_range;
+  std::map<std::string,uint64_t> base_map;
   RegsState state;
   uint64_t base;
   PrintMode mode = ADDR_MODE;
@@ -48,11 +52,12 @@ class TaintTrace {
 
   void PrintReg(const QBDI::GPRState *state);
   QBDI::VMAction InstTrace(const QBDI::VM *vm, const QBDI::GPRState *gpr,QBDI::FPRState *fpr);
-  void PostInstTrace(QBDI::VM *vm, QBDI::GPRState *gpr,QBDI::FPRState *fpr);
-  void MemoryTrace(QBDI::VM *vm, QBDI::GPRState *gpr,QBDI::FPRState *fpr);
+  void PostInstTrace(QBDI::VM *vm, const QBDI::GPRState *gpr,QBDI::FPRState *fpr);
+  void MemoryTrace(const QBDI::VM *vm, QBDI::GPRState *gpr,
+                   QBDI::FPRState *fpr);
+  TaintTrace(uint64_t base,PrintMode mode=ADDR_MODE,const std::string* path=nullptr);
   void PrintMemoryOp(QBDI::GPRState *gpr, uint64_t offset,
                      QBDI::MemoryAccess *access, int reg_w = -1,int reg_r= -1);
-  TaintTrace(const std::string *path, uint64_t base, PrintMode mode);
   // Taint reg name
   const char *TName(const int reg) const {return reg_name[reg];}
   const char *RegName(const int idx) const {return reg_name.get(idx);}
@@ -63,10 +68,27 @@ class TaintTrace {
   bool IsAsmMode() const { return mode == ASM_MODE; }
   bool IsDebugMode() const { return mode == DEBUG_MODE; }
   bool IsTraceMode() const { return mode == TRACE_MODE; }
-  bool  NeedFlush() const { return IsDebugMode();}
+  bool  NeedFlush() const { return true;}
   ~TaintTrace() {
     log.close();
   }
+
+  uint64_t GetAndSaveBase(const char* module_name) {
+    uint64_t bais = 0;
+    const auto iter = base_map.find(module_name);
+    if (iter == base_map.end()) {
+      GumModule * mod = gum_process_find_module_by_name(module_name);
+      if (mod) {
+        bais = gum_module_get_range(mod)->base_address;
+        all_log << "base:"<< module_name << "=" << ToHex(bais) << std::endl;
+        base_map[module_name] = bais;
+      }
+    }else {
+      bais = iter->second;
+    }
+    return bais;
+  }
+
   static bool IsValid(const int64_t input) {return input>=0;}
   bool SetTaintReg(const int reg, const uint64_t ref) {
     state.SetTaintReg(reg,ref);
@@ -76,8 +98,8 @@ class TaintTrace {
     if (!IsValid(reg))return false;
     return state.IsTaintReg(reg);
   }
-  void AddTaintMemory(const uint64_t addr, const int size){
-    memory.InsertBySize(addr,size);
+  void AddTaintMemory(const uint64_t addr, const uint64_t size){
+    memory.InsertBySize(addr, size);
   }
   void AddTaintMemory(const MemoryRange & range){
     memory.insert(range.min,range.max);
