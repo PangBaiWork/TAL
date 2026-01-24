@@ -175,7 +175,7 @@ int main()
     // taint_trace((void*)&btea,1,(uint64_t)flag,16,2);
     // setbuf(stdout, NULL);
     // taint_trace_str((uint64_t)&btea,1,(char*)flag,TRACE_MODE);
-    trace((uint64_t)&btea,0,1,ADDR_MODE);
+    trace((uint64_t)&btea,0,1,ASM_MODE);
     add_taint_range((uint64_t)flag,16);
     LOGD("test begin");
     btea((uint32_t*)flag,4,(uint32_t*)key);

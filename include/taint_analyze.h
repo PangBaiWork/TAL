@@ -90,10 +90,10 @@ class TaintTrace {
     return bais;
   }
 
-  static bool IsValid(const int64_t input) {return input>=0;}
+  static bool IsValid(const int input) {return input>=0;}
 
   bool SetTaintReg(const int reg, const uint64_t ref) {
-
+      if (reg < 0) return false;
 #if defined(__aarch64__)
       // for wzr(idx 32) : subs xzr, x0, x1
       // when keep flag but lost result

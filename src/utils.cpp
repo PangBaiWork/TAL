@@ -39,7 +39,7 @@ int GetSameStrLen(const char *str1, const char *str2) {
 }
 
 #define PRINT_REG(reg) LOGI(#reg "_F:%llx,", cpu->reg)
-#define PRINT_QBDI_REG(reg) LOGI(#reg "_Q:%llx,", state->x#reg)
+#define PRINT_QBDI_REG(reg) LOGI(#reg "_Q:%llx,", state->reg)
 #if defined(__x86_64__)
 // X86_64
 

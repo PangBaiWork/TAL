@@ -180,10 +180,12 @@ QBDI::VMAction TaintTrace::InstTrace(const QBDI::VM *vm,
         }
         if (IsTaint(rreg) && !IsTaint(wreg)){
             if (IsValid(wreg)){
+                // ldr x0, [*reg]
+                // todo: ldp x0, x1, [*reg]
                 SetTaintReg(wreg,0);
             } else {
                 // CMP REG, *REG
-                // mov	mem, *rax
+                // mov	[mem], *rax
                 if (!inst->isCompare) return QBDI::CONTINUE;
             }
         } else if (!IsTaint(rreg) && IsTaint(wreg)){
@@ -272,7 +274,10 @@ void TaintTrace::PostInstTrace(QBDI::VM *vm, const QBDI::GPRState *gpr, QBDI::FP
     // if(needFlush()) log.flush();
 }
 void TaintTrace::MemoryTrace(const QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRState *fpr) {
-    int16_t rreg = -1,wreg = -1,rwreg=-1;
+    int taint_r[4] = { -1,-1},taint_w[4] = {-1,-1} ,taint_rw = -1;
+    int clear_r[4] = { -1,-1},clear_w[4] = {-1,-1} ,clear_rw = -1;
+    int taint_r_idx = -1,taint_w_idx = -1,clear_r_idx = -1,clear_w_idx = -1;
+
     // int16_t rOpIdx = -1,wOpIdx = -1;
     std::vector<QBDI::MemoryAccess> access_list = vm->getInstMemoryAccess();
     const QBDI::InstAnalysis *inst = vm->getInstAnalysis(
@@ -285,16 +290,23 @@ void TaintTrace::MemoryTrace(const QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRS
     for(int16_t idx = 0;idx < inst->numOperands;idx++) {
         const QBDI::OperandAnalysis &operand = inst->operands[idx];
         if(operand.regAccess == QBDI::REGISTER_READ ){
-            if ( !IsValid(rreg)||!IsTaint(rreg)){
-                // only tainted reg
-                rreg = operand.regCtxIdx;
-                // rOpIdx = idx;
+            if (IsTaint(operand.regCtxIdx)){
+                taint_r[++taint_r_idx] = operand.regCtxIdx;
+            } else {
+                clear_r[++clear_r_idx] = operand.regCtxIdx;
             }
         }else if (operand.regAccess == QBDI::REGISTER_WRITE ){
-            wreg = operand.regCtxIdx;
-            // wOpIdx = idx;
+            if (IsTaint(operand.regCtxIdx)){
+                taint_w[++taint_w_idx] = operand.regCtxIdx;
+            } else {
+                clear_w[++clear_w_idx] = operand.regCtxIdx;
+            }
         }else if (operand.regAccess == QBDI::REGISTER_READ_WRITE){
-            rwreg = operand.regCtxIdx;
+            if (IsTaint(operand.regCtxIdx)){
+                taint_rw = operand.regCtxIdx;
+            } else {
+                clear_rw = operand.regCtxIdx;
+            }
         }
     }
 
@@ -333,36 +345,53 @@ void TaintTrace::MemoryTrace(const QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRS
               *     OR  REG, [MEM] */
                 const auto range = memory.find(access.accessAddress);
                 if (range){
-                    if (IsValid(wreg)){
-                        SetTaintReg(wreg,0);
-                        PrintMemoryOp(gpr,offset,&access,wreg,-1);
+                    // ldp x1, x2, *[mem]
+                    if (IsValid(clear_w_idx)){
+        clear_w_l:      SetTaintReg(clear_w[clear_w_idx--],0);
+                        if (IsValid(clear_w_idx)) goto clear_w_l;
+                        // todo :print all clear_w
+                        PrintMemoryOp(gpr,offset,&access,clear_w[0],-1);
 
-                    }else if(IsValid(rwreg)){
+                    }else if(IsValid(clear_rw)||IsValid(taint_rw)){
 
                         /*      XOR REG, *[MEM]
                                 ADD REG, *[MEM]
-                                SUB REG, *[MEM] */
-
-                        SetTaintReg(rwreg,0);
-
+                                SUB REG, *[MEM]
+                                XOR *REG, [MEM]*/
+                        int rw = IsValid(clear_rw)?clear_rw:taint_rw;
+                        SetTaintReg(rw,0);
                         if (IsAddrMode()||IsDebugMode()) log << PRINT_OFFSET(offset);
-                        log << MOV<< RegName(rwreg) << ", "<< ToHex(UNKNOWN_CONST) <<ENTER;
+                        log << MOV<< RegName(rw) << ", "<< ToHex(UNKNOWN_CONST) <<ENTER;
                         std::ostringstream log_str;
 
                         if (IsAddrMode()||IsDebugMode()) log_str << PRINT_OFFSET(offset);
                         log_str << TAB << disassembler.AnalyzeInst(inst->address)->mnemonic<<SPACE;
-                        log_str << RegName(rwreg) << ", " << PRINT_ADDR(access.accessAddress);
+                        log_str << RegName(rw) << ", " << PRINT_ADDR(access.accessAddress);
                         log_str << ASM_NOTE;
                         log << std::left << std::setw(STR_ALIGN) << log_str.str();
-                        log << SPLIT << TName(rwreg) << EQ <<ToHex(access.value);
+                        log << SPLIT << TName(rw) << EQ <<ToHex(access.value);
                         log << PRINT_SIZE(access.size);
                         log << ENTER;
 
                     };
-                } else if(IsValid(wreg)){
-                    // MOV RAX,[*RDX]
-                    if (!IsTaint(rreg))
-                        state.ClearReg(wreg);
+                } else {
+
+                    if (!IsValid(taint_r_idx)&&IsValid(taint_w_idx)) {
+                        // ldp *x1, *x2, [reg]
+                        // MOV *RAX, [MEM]
+        taint_w_l2:     state.ClearReg(taint_w[taint_w_idx--]);
+                        if (IsValid(taint_w_idx)) goto taint_w_l2;
+                    } else if (IsValid(taint_r_idx)){
+                        if (IsValid(clear_w_idx)) {
+                            // MOV RAX,[*RDX]
+                            // ldp x1, x2, [*reg] (print by InstTrace)
+        clear_w_l3:         SetTaintReg(clear_w[clear_w_idx--],0);
+                            if (IsValid(clear_w_idx)) goto clear_w_l3;
+                        } else if (IsValid(clear_rw)) {
+                            SetTaintReg(clear_rw,0);
+                        }
+                        // print
+                    }
                 }
             }
             break;
@@ -371,8 +400,10 @@ void TaintTrace::MemoryTrace(const QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRS
              * PUSH REG
              *
              **/
-            if(IsTaint(rreg)){
-                PrintMemoryOp(gpr, offset, &access, -1, rreg);
+            if(IsValid(taint_r_idx)){
+                // todo: print all taint_r
+                PrintMemoryOp(gpr, offset, &access, -1, taint_r[0]);
+                // question: is stp case access.size = 16 ?
                 const bool result = memory.InsertBySize(access.accessAddress, access.size);
                 if (IsDebugMode())
                 {
@@ -399,22 +430,24 @@ void TaintTrace::MemoryTrace(const QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRS
              *  SUB [MEM], REG
              *  AND [MEM], REG
              **/
+            // only x86 sure ?
             const auto range = memory.find(access.accessAddress);
-            if (!range && !IsTaint(rreg)) return;
+            if (!range && !IsValid(taint_r_idx)) return;
 
-            if (range && !IsTaint(rreg)) {
+            if (range && !IsValid(taint_r_idx)) {
               // XOR *[MEM], REG
               if (IsAddrMode() || IsDebugMode()) log << PRINT_OFFSET(offset);
-              log << MOV << RegName(rreg) << ", "
-                  <<  PRINT_GPR(rreg) << ENTER;
-            } else if (!range && IsTaint(rreg)) {
+              log << MOV << RegName(clear_r[0]) << ", "
+                  <<  PRINT_GPR(clear_r[0]) << ENTER;
+            } else if (!range && IsValid(taint_r_idx)) {
               // XOR [MEM], *REG
               memory.InsertBySize(access.accessAddress, access.size);
             }
             std::ostringstream log_str2;
             if (IsAddrMode()||IsDebugMode()) log_str2 << PRINT_OFFSET(offset);
             log_str2 << TAB << disassembler.AnalyzeInst(inst->address)->mnemonic << SPACE;
-            log_str2 << PRINT_ADDR(access.accessAddress) << ", " <<  RegName(rreg) ;
+            log_str2 << PRINT_ADDR(access.accessAddress) << ", "
+            <<  RegName(IsValid(taint_r_idx)?taint_r[0]:clear_r[0]) ;
             log_str2 << ASM_NOTE;
             log << std::left << std::setw(STR_ALIGN) << log_str2.str();
             log << SPLIT <<  PRINT_ADDR(access.accessAddress) << EQ <<ToHex(access.value);
