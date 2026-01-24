@@ -14,15 +14,17 @@ char *g_taint_str = nullptr;
 
 static void on_enter(GumInvocationContext *context, gpointer user_data) {
     print_frida_reg(context->cpu_context);
-    LOGS("begin");
+    LOGI("begin");
     // memcpy(&g_cpu_context,context->cpu_context,sizeof(GumCpuContext));
     void *address = context->function;
     gum_interceptor_detach(g_interceptor, g_listener);
     const clock_t start = clock();
-    QBDI::setLogPriority(QBDI::DEBUG);
-    QBDI::setLogFile("log.asm", true);
+//    QBDI::setLogPriority(QBDI::DEBUG);
+//    QBDI::setLogFile("log.asm", true);
     QBDI::VM qvm = init(address, tracer);
+#if defined(__x86_64__)
     qvm.setOptions(QBDI::OPT_ENABLE_FS_GS);
+#endif
 
     const auto state = qvm.getGPRState();
     syn_reg_gum(context->cpu_context, state, true);
@@ -30,20 +32,19 @@ static void on_enter(GumInvocationContext *context, gpointer user_data) {
     // state->gs=get_gs_selector();
     // state->fs=get_fs_base();
     // state->gs=get_gs_base();
-    LOGE("gs: %llx,fs:%llx", state->gs, state->fs);
     qvm.run(reinterpret_cast<QBDI::rword>(address), tracer->trace_end);
     syn_reg_gum(context->cpu_context, state, false);
     const clock_t end = clock();
-    LOGS("time: %d", (end - start) / CLOCKS_PER_SEC);
-    LOGS("end");
+    LOGI("time: %d", (end - start) / CLOCKS_PER_SEC);
+    LOGI("end");
 }
 
 C_EXPORT void trace(const uint64_t addr, const uint64_t end, const bool all,
                     int mode) {
-    LOGD("hooking %llx", addr);
+    LOGI("hooking %llx", addr);
     GumModule *module = gum_process_find_module_by_address(addr);
     const uint64_t base_addr = gum_module_get_range(module)->base_address;
-    LOGE("Base:%llx", base_addr);
+    LOGI("Base:%llx", base_addr);
 
     tracer = new TaintTrace(base_addr, static_cast<PrintMode>(mode));
     tracer->trace_all = all;
@@ -53,7 +54,7 @@ C_EXPORT void trace(const uint64_t addr, const uint64_t end, const bool all,
     g_listener =
         HookUtils::gum_attach(g_interceptor, reinterpret_cast<void *>(addr),
                               on_enter, nullptr, nullptr);
-    LOGE("hooked");
+    LOGI("hooked");
 }
 
 
@@ -113,6 +114,16 @@ C_EXPORT bool add_taint_range(const uint64_t addr, const uint64_t size) {
     }
     return false;
 }
+
+C_EXPORT bool set_log_path(const char* path) {
+    const auto  log_path = std::string(path);
+    if (tracer) {
+        tracer->SetOutputPath(&log_path);
+        return true;
+    }
+    return false;
+}
+
 
 C_INIT void init_main() {
     gum_init_embedded();

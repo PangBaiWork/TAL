@@ -20,11 +20,12 @@ else()
     message("current platform: unkonw ")
 endif()
 
-if(ANDROID)
+if(ANDROID OR CMAKE_SYSTEM_NAME STREQUAL "Android")
     if(NOT ANDROID_NDK)
         message(FATAL_ERROR "ANDROID_NDK is not set")
     endif()
     set(QBDI_PLATFORM "android")
+    message("current platform: android ")
     set(QBDI_ARCH "AARCH64")
 
     message(STATUS "NDK version: ${ANDROID_NDK_VERSION}")

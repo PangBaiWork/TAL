@@ -38,11 +38,15 @@ int GetSameStrLen(const char *str1, const char *str2) {
     return count;
 }
 
+#define PRINT_REG(reg) LOGI(#reg "_F:%llx,", cpu->reg)
+#define PRINT_QBDI_REG(reg) LOGI(#reg "_Q:%llx,", state->x#reg)
+#if defined(__x86_64__)
+// X86_64
 
 void syn_reg_gum(GumCpuContext *cpu, QBDI::GPRState *state, bool F2Q) {
 #define SET_QBDI(reg)        \
-    (state->reg = cpu->reg); \
-    LOGE(#reg ":%llx,", cpu->reg)
+    (state->reg = cpu->reg);
+    // LOGE(#reg "_syn:%llx,", cpu->reg)
 #define SET_FRIDA(reg) (cpu->reg = state->reg)
     if (F2Q) {
         SET_QBDI(r8);
@@ -84,8 +88,6 @@ void syn_reg_gum(GumCpuContext *cpu, QBDI::GPRState *state, bool F2Q) {
 }
 
 
-#define PRINT_REG(reg) LOGE(#reg "_org:%llx,", cpu->reg)
-#define PRINT_QBDI_REG(reg) LOGE(#reg "_org:%llx,", state->reg)
 
 void print_frida_reg(GumCpuContext *cpu) {
     PRINT_REG(r8);
@@ -102,7 +104,7 @@ void print_frida_reg(GumCpuContext *cpu) {
     PRINT_REG(rdx);
     PRINT_REG(rbx);
     PRINT_REG(rsp);
-    LOGE("frida str rsp:%p %s", cpu->rsp, cpu->rsp);
+    // LOGE("frida str rsp:%p %s", cpu->rsp, cpu->rsp);
     PRINT_REG(rbp);
     PRINT_REG(rsi);
     PRINT_REG(rdi);
@@ -127,3 +129,50 @@ void print_qbdi_reg(QBDI::GPRState *state) {
     PRINT_QBDI_REG(rsi);
     PRINT_QBDI_REG(rdi);
 }
+#elif defined(__arm__)
+// ARM 32-bit
+#elif defined(__aarch64__)
+// ARM64
+
+void syn_reg_gum(GumCpuContext *cpu, QBDI::GPRState *state, bool F2Q) {
+
+    if (F2Q) {
+        for (int i = 0; i < 29; i++) {
+            QBDI_GPR_SET(state, i, cpu->x[i]);
+        }
+        state->lr = cpu->lr;
+        state->sp = cpu->sp;
+        state->x29 = cpu->fp;
+        state->nzcv = cpu->nzcv;
+
+    } else {
+        for (int i = 0; i < 29; i++) {
+            cpu->x[i] = QBDI_GPR_GET(state, i);
+        }
+        cpu->fp = state->x29;
+        cpu->lr = state->lr;
+        cpu->sp = state->sp;
+        cpu->nzcv = state->nzcv;
+    }
+
+}
+
+
+void print_frida_reg(GumCpuContext *cpu) {
+    for (int i = 0; i < 18; i++) {
+        PRINT_REG(x[i]);
+    }
+    PRINT_REG(sp);
+}
+void print_qbdi_reg(QBDI::GPRState *state) {
+    for (int i = 0; i < 18; i++) {
+        LOGI("x%d_Q:%llx,",i,QBDI_GPR_GET(state, i));
+    }
+    LOGI("sp_Q:%llx,", state->sp);
+}
+
+#elif defined(__i386__)
+  // x86 32-bit
+#endif
+
+

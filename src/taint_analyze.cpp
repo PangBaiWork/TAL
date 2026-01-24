@@ -24,25 +24,42 @@
 std::string default_taint_file = ".asm";
 std::string default_trace_file = "trace.asm";
 
-
-TaintTrace::TaintTrace(const uint64_t base,
-                       const PrintMode mode,const std::string* path): reg_name()
-{
+bool TaintTrace::SetOutputPath(const std::string *path) {
+    std::string def_path = std::string(BLANK);
     if (path == nullptr) {
-        path =new std::string(BLANK);
+        path = &def_path;
     }
+    if (log.is_open()){
+        log.close();
+        log.clear();
+    }
+
+    if (all_log.is_open()){
+        all_log.close();
+        all_log.clear();
+    }
+
+
     log.open(*path+ModeName[mode]+default_taint_file, std::ios::out | std::ios::trunc);
-    this->base = base;
-    this->mode = mode;
-    reg_name.SetGPRArray(QBDI::GPR_NAMES, state);
-    if (IsAsmMode())
-    {
+    if (log.is_open()&&IsAsmMode()){
         log << ASM_START_STR << ENTER;
     }
     if (IsDebugMode()||IsTraceMode())
     {
         all_log.open(*path + default_trace_file, std::ios::out | std::ios::trunc);
     }
+    return log.is_open()&&all_log.is_open();
+}
+
+TaintTrace::TaintTrace(const uint64_t base,
+                       const PrintMode mode,const std::string* path): reg_name()
+{
+
+    this->base = base;
+    this->mode = mode;
+    reg_name.SetGPRArray(QBDI::GPR_NAMES, state);
+    SetOutputPath(path);
+
 }
 
 
@@ -90,37 +107,6 @@ void TaintTrace::PrintMemoryOp(QBDI::GPRState* gpr,uint64_t offset,QBDI::MemoryA
 }
 
 
-QBDI::rword gs=0;
-void TaintTrace::PrintReg(const QBDI::GPRState *state) {
-    // PRINT_QBDI_REG(r8);
-    // PRINT_QBDI_REG(r9);
-    // PRINT_QBDI_REG(r10);
-    // PRINT_QBDI_REG(r11);
-    // PRINT_QBDI_REG(r12);
-    // PRINT_QBDI_REG(r13);
-    // PRINT_QBDI_REG(r14);
-    // PRINT_QBDI_REG(r15);
-    //
-    // PRINT_QBDI_REG(rax);
-    // PRINT_QBDI_REG(rcx);
-    // PRINT_QBDI_REG(rdx);
-    // PRINT_QBDI_REG(rbx);
-    // PRINT_QBDI_REG(rsp);
-    // PRINT_QBDI_REG(rbp);
-    // PRINT_QBDI_REG(rsi);
-    // PRINT_QBDI_REG(rdi);
-    PRINT_QBDI_REG(gs);
-    // if (!gs) {
-    //   gs=state->gs;
-    // }else {
-    //   state->gs=gs;
-    // }
-    // PRINT_QBDI_REG(rax);
-
-    // PRINT_QBDI_REG();
-
-
-}
 
 QBDI::VMAction TaintTrace::InstTrace(const QBDI::VM *vm,
                                      const QBDI::GPRState *gpr, QBDI::FPRState *fpr) {

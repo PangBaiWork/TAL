@@ -183,6 +183,7 @@ void removeConflictModule(VM& vm) {
          strstr(modules[i].name, "libEGL.so")       ||
          strstr(modules[i].name, "libc++.so")        ||
          strstr(modules[i].name, "libc.so")        ||
+         strstr(modules[i].name, "liblog.so")        ||
          strstr(modules[i].name, "libGLESv1_CM.so") ||modules[i].name[0] == 0)) {
             LOGD("removeConflictModule: %s",modules[i].name);
             vm.removeInstrumentedRange(modules[i].start, modules[i].end);

@@ -10,13 +10,13 @@
 #define DELTA 0x9e3779b9
 #define MX (((z>>5^y<<2) + (y>>3^z<<4)) ^ ((sum^y) + (key[(p&3)^e] ^ z)))
 // 容易魔改
-
-
-
-#include <emmintrin.h>  // SSE2
 #include <iostream>
 #include <cstdint>
 #include <cstring>
+
+#if defined(__x86_64__)
+#include <emmintrin.h>  // SSE2
+
 // 模拟 movups xmm0, xmmword ptr [rax+0DA0h] 操作
 void simulate_movups_instruction() {
     // std::cout << "=== 模拟 movups xmm0, [rax+0DA0h] ===" << std::endl;
@@ -72,6 +72,7 @@ void simulate_movups_instruction() {
     // }
     // std::cout << std::dec << std::endl;
 }
+#endif
 void reg_jmp_test() {
     int i=0;
     int sum=0;
@@ -164,6 +165,8 @@ int main()
 #ifdef _MSC_VER
     gum_init_embedded();
 #endif
+    setvbuf(stdout, NULL, _IONBF, 0);
+    setvbuf(stderr, NULL, _IONBF, 0);
 
     std::cout << "Hello World!\n";
     unsigned char flag[17]="1145144444441111";
@@ -174,7 +177,7 @@ int main()
     // taint_trace_str((uint64_t)&btea,1,(char*)flag,TRACE_MODE);
     trace((uint64_t)&btea,0,1,ADDR_MODE);
     add_taint_range((uint64_t)flag,16);
-    LOGD("test finish");
+    LOGD("test begin");
     btea((uint32_t*)flag,4,(uint32_t*)key);
     LOGD("test finish");
     return  114514;

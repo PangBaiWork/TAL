@@ -58,6 +58,7 @@ class TaintTrace {
   TaintTrace(uint64_t base,PrintMode mode=ADDR_MODE,const std::string* path=nullptr);
   void PrintMemoryOp(QBDI::GPRState *gpr, uint64_t offset,
                      QBDI::MemoryAccess *access, int reg_w = -1,int reg_r= -1);
+  bool SetOutputPath(const std::string *path);
   // Taint reg name
   const char *TName(const int reg) const {return reg_name[reg];}
   const char *RegName(const int idx) const {return reg_name.get(idx);}
@@ -90,7 +91,15 @@ class TaintTrace {
   }
 
   static bool IsValid(const int64_t input) {return input>=0;}
+
   bool SetTaintReg(const int reg, const uint64_t ref) {
+
+#if defined(__aarch64__)
+      // for wzr(idx 32) : subs xzr, x0, x1
+      // when keep flag but lost result
+      if(reg == 32) return false;
+#endif
+
     state.SetTaintReg(reg,ref);
     return true;
   }
