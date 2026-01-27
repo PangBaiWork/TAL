@@ -7,20 +7,24 @@
 #include "utils.h"
 #include "vm.h"
 
-GumInvocationListener *g_listener = nullptr;
-GumInterceptor *g_interceptor = nullptr;
-TaintTrace *tracer = nullptr;
+//GumInvocationListener *g_listener = nullptr;
+//GumInterceptor *g_interceptor = nullptr;
+TaintTrace *cur_tracer = nullptr;
 char *g_taint_str = nullptr;
 
 static void on_enter(GumInvocationContext *context, gpointer user_data) {
     print_frida_reg(context->cpu_context);
     LOGI("begin");
+    auto* data= (CallbackData*)user_data;
+    TaintTrace* tracer = data->tracer;
     // memcpy(&g_cpu_context,context->cpu_context,sizeof(GumCpuContext));
     void *address = context->function;
-    gum_interceptor_detach(g_interceptor, g_listener);
+    gum_interceptor_detach(data->interceptor,data->listener);
+    gum_invocation_context_get_listener_function_data(context);
     const clock_t start = clock();
 //    QBDI::setLogPriority(QBDI::DEBUG);
 //    QBDI::setLogFile("log.asm", true);
+
     QBDI::VM qvm = init(address, tracer);
 #if defined(__x86_64__)
     qvm.setOptions(QBDI::OPT_ENABLE_FS_GS);
@@ -46,14 +50,13 @@ C_EXPORT void trace(const uint64_t addr, const uint64_t end, const bool all,
     const uint64_t base_addr = gum_module_get_range(module)->base_address;
     LOGI("Base:%llx", base_addr);
 
-    tracer = new TaintTrace(base_addr, static_cast<PrintMode>(mode));
-    tracer->trace_all = all;
-    tracer->trace_end = end;
+    cur_tracer = new TaintTrace(base_addr, static_cast<PrintMode>(mode));
+    cur_tracer->trace_all = all;
+    cur_tracer->trace_end = end;
 
-    g_interceptor = gum_interceptor_obtain();
-    g_listener =
-        HookUtils::gum_attach(g_interceptor, reinterpret_cast<void *>(addr),
-                              on_enter, nullptr, nullptr);
+    auto interceptor = gum_interceptor_obtain();
+    HookUtils::gum_attach(interceptor, reinterpret_cast<void *>(addr),
+                              on_enter, cur_tracer);
     LOGI("hooked");
 }
 
@@ -67,15 +70,14 @@ C_EXPORT void taint_trace(uint64_t addr, const bool all,
     const uint64_t base_addr = gum_module_get_range(module)->base_address;
     LOGE("Base:%llx", base_addr);
     const auto taint = new MemoryRange(taint_addr, taint_addr + taint_size);
-    tracer = new TaintTrace(base_addr, static_cast<PrintMode>(mode));
-    tracer->trace_all = all;
-    tracer->trace_end = 0;
-    tracer->AddTaintMemory(*taint);
+    cur_tracer = new TaintTrace(base_addr, static_cast<PrintMode>(mode));
+    cur_tracer->trace_all = all;
+    cur_tracer->trace_end = 0;
+    cur_tracer->AddTaintMemory(*taint);
 
-    g_interceptor = gum_interceptor_obtain();
-    g_listener =
-        HookUtils::gum_attach(g_interceptor, reinterpret_cast<void *>(addr),
-                              on_enter, nullptr, nullptr);
+    auto interceptor = gum_interceptor_obtain();
+    HookUtils::gum_attach(interceptor, reinterpret_cast<void *>(addr),
+                              on_enter, cur_tracer);
     LOGE("hooked");
 }
 
@@ -88,28 +90,28 @@ C_EXPORT void taint_trace_str(uint64_t addr, bool all, char *taint_str,
     const uint64_t base_addr = gum_module_get_range(module)->base_address;
     LOGE("Base:%llx", base_addr);
 
-    tracer = new TaintTrace(base_addr, static_cast<PrintMode>(mode));
-    tracer->trace_all = all;
-    tracer->trace_end = 0;
-    tracer->SetTaintStr(g_taint_str);
+    cur_tracer = new TaintTrace(base_addr, static_cast<PrintMode>(mode));
+    cur_tracer->trace_all = all;
+    cur_tracer->trace_end = 0;
+    cur_tracer->SetTaintStr(g_taint_str);
 
-    g_interceptor = gum_interceptor_obtain();
-    g_listener =
-        HookUtils::gum_attach(g_interceptor, reinterpret_cast<void *>(addr),
-                              on_enter, nullptr, nullptr);
+    auto  interceptor = gum_interceptor_obtain();
+
+    HookUtils::gum_attach(interceptor, reinterpret_cast<void *>(addr),
+                              on_enter, cur_tracer);
     LOGE("hooked");
 }
 
 C_EXPORT bool remove_range(uint64_t start, const uint64_t size) {
-    if (tracer) {
-        tracer->avoid_range.emplace_back(start, start + size);
+    if (cur_tracer) {
+        cur_tracer->avoid_range.emplace_back(start, start + size);
         return true;
     }
     return false;
 }
 C_EXPORT bool add_taint_range(const uint64_t addr, const uint64_t size) {
-    if (tracer) {
-        tracer->AddTaintMemory(addr, size);
+    if (cur_tracer) {
+        cur_tracer->AddTaintMemory(addr, size);
         return true;
     }
     return false;
@@ -117,8 +119,8 @@ C_EXPORT bool add_taint_range(const uint64_t addr, const uint64_t size) {
 
 C_EXPORT bool set_log_path(const char* path) {
     const auto  log_path = std::string(path);
-    if (tracer) {
-        tracer->SetOutputPath(&log_path);
+    if (cur_tracer) {
+        cur_tracer->SetOutputPath(&log_path);
         return true;
     }
     return false;

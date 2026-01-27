@@ -27,17 +27,23 @@ void HookUtils::gum_replace(void* addr, void* replace, void** backup){
 
 
 // GumInvocationListener *listener=nullptr;
-GumInvocationListener *HookUtils::gum_attach(GumInterceptor *interceptor,void* addr, GumInvocationCallback on_enter, GumInvocationCallback on_leave, void* func_data ){
+GumInvocationListener *HookUtils::gum_attach(GumInterceptor *interceptor,void* addr, GumInvocationCallback on_enter, TaintTrace* tracer){
 
     gum_interceptor_begin_transaction(interceptor);
     if (on_enter == nullptr) on_enter = empty_on_enter;
-    if (on_leave == nullptr) on_leave = empty_on_leave;
-    void* data = malloc(sizeof(void*));
-    auto listener = gum_make_call_listener(on_enter,on_leave, data, nullptr);
-    gum_interceptor_attach(interceptor,addr,listener, func_data,GUM_ATTACH_FLAGS_NONE);
+    auto data = new CallbackData();
+    data->tracer = tracer;
+//    void* data = malloc(sizeof(void*));
+    auto listener = gum_make_call_listener(on_enter,empty_on_leave, data, nullptr);
+    data->listener = listener;
+    data->interceptor = interceptor;
+    gum_interceptor_attach(interceptor,addr,listener, nullptr,GUM_ATTACH_FLAGS_NONE);
     gum_interceptor_end_transaction(interceptor);
     return listener;
 }
+
+
+
 
 HOOK_DEF(void,call_array,const char* array_name,
          void* functions,

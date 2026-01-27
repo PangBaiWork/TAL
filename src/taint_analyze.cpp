@@ -243,24 +243,26 @@ QBDI::VMAction TaintTrace::InstTrace(const QBDI::VM *vm,
     log << SPLIT;
     return QBDI::CONTINUE;
 
+
+
 }
 void TaintTrace::PostInstTrace(QBDI::VM *vm, const QBDI::GPRState *gpr, QBDI::FPRState *fpr)
 {
     if (!enable_post_inst)return;
     CleanPostInstFlag();
     if (IsTraceMode()||IsDebugMode()) {
-      std::ofstream &log= all_log;
-      // printReg(gprState);
-      if (IsValid(wreg))
-          log << SPACE << TName(wreg) << EQ << PRINT_GPR(wreg) << " ";
-      if (IsValid(rwreg[0]))
-          log << SPACE << TName(rwreg[0]) << EQ << PRINT_GPR(rwreg[0]) << " ";
-      if (IsValid(rreg))
-          log << SPACE << TName(rreg) << EQ << PRINT_GPR(rreg);
-      log << ENTER;
-      if(NeedFlush()) log.flush();
-
-      return;
+        log << ENTER;
+        std::ofstream &log= all_log;
+        // printReg(gprState);
+        if (IsValid(wreg))
+            log << SPACE << TName(wreg) << EQ << PRINT_GPR(wreg) << " ";
+        if (IsValid(rwreg[0]))
+            log << SPACE << TName(rwreg[0]) << EQ << PRINT_GPR(rwreg[0]) << " ";
+        if (IsValid(rreg))
+            log << SPACE << TName(rreg) << EQ << PRINT_GPR(rreg);
+        log << ENTER;
+        if(NeedFlush()) log.flush();
+        return;
 
     }
     // todo... fix:debug mode taint.asm will lose post reg value
@@ -274,8 +276,8 @@ void TaintTrace::PostInstTrace(QBDI::VM *vm, const QBDI::GPRState *gpr, QBDI::FP
     // if(needFlush()) log.flush();
 }
 void TaintTrace::MemoryTrace(const QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRState *fpr) {
-    int taint_r[4] = { -1,-1},taint_w[4] = {-1,-1} ,taint_rw = -1;
-    int clear_r[4] = { -1,-1},clear_w[4] = {-1,-1} ,clear_rw = -1;
+    int taint_r[4] = { -1,-1,-1},taint_w[4] = {-1,-1,-1} ,taint_rw = -1;
+    int clear_r[4] = { -1,-1,-1},clear_w[4] = {-1,-1,-1} ,clear_rw = -1;
     int taint_r_idx = -1,taint_w_idx = -1,clear_r_idx = -1,clear_w_idx = -1;
 
     // int16_t rOpIdx = -1,wOpIdx = -1;
@@ -390,7 +392,6 @@ void TaintTrace::MemoryTrace(const QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRS
                         } else if (IsValid(clear_rw)) {
                             SetTaintReg(clear_rw,0);
                         }
-                        // print
                     }
                 }
             }

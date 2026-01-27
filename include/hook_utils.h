@@ -5,7 +5,7 @@
 #ifndef QBDI_HOOKUTILS_H
 #define QBDI_HOOKUTILS_H
 #include "frida-gum.h"
-
+#include "taint_analyze.h"
 
 
 
@@ -50,12 +50,19 @@ struct MapItemInfo {
     size_t end;
 };
 
+class CallbackData{
+public:
+    TaintTrace *tracer = nullptr;
+    GumInterceptor *interceptor = nullptr;
+    GumInvocationListener *listener = nullptr;
+
+};
 
 
 
 class HookUtils{
     public:
-        static GumInvocationListener * gum_attach(GumInterceptor *interceptor,void *addr,GumInvocationCallback on_enter, GumInvocationCallback on_leave,void* func_data= nullptr);
+        static GumInvocationListener * gum_attach(GumInterceptor *interceptor,void *addr,GumInvocationCallback on_enter, TaintTrace* tracer);
         static void gum_replace(void* addr,void* replace,void** backup);
 
 
