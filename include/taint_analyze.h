@@ -17,6 +17,24 @@
 #include "utils.h"
 #define STR_ALIGN 40
 #define READABLE_ADDR 0x10000
+
+#define UNKNOWN_CONST 0xdeadbeef
+#define TAB "\t"
+#define SPLIT " | "
+#define ENTER "\n"
+#define SPACE " "
+#define EQ "="
+#define MOV (TAB "mov ")
+#define BLANK ""
+// std::endl
+
+#define ASM_NOTE (IsAsmMode() ? ";" : BLANK)
+#define PRINT_OFFSET(OFFSET) (ToHex(OFFSET) + ":")
+#define PRINT_ADDR(VALUE) ("[" + ToHex(VALUE) + "]")
+#define PRINT_SIZE(SIZE) (" <" + ToHex(SIZE) + "> ")
+#define PRINT_GPR(REG)  ToHex(QBDI_GPR_GET(gpr,REG))
+#define PRINT_QBDI_REG(reg) (all_log << #reg << ":" << ToHex(state->reg) << ENTER)
+
 enum PrintMode {
   ADDR_MODE = 0,
   ASM_MODE = 1,
@@ -30,6 +48,12 @@ inline  std::unordered_map<PrintMode, std::string> ModeName = {
   {DEBUG_MODE,  "debug"},
   {TRACE_MODE,  "trace"},
 };
+enum RegAccess{
+    WRITE,
+    READ,
+    READ_WRITE
+};
+
 
 // using namespace std;
 class TaintTrace {
@@ -45,7 +69,9 @@ class TaintTrace {
   std::ofstream log;
   std::ofstream all_log;
   Instruction disassembler;
-  int16_t rreg = -1, wreg = -1, rwreg[2] = {-1, -1};  // for post reg
+
+//  int16_t taint_r[4] ={-1,-1,-1}, taint_w[4] = {}, rwreg[2] = {-1, -1};  // for post reg
+
   bool enable_post_inst = false;
   RegArray reg_name;
   char *taint_str = nullptr;
@@ -73,6 +99,7 @@ class TaintTrace {
   ~TaintTrace() {
     log.close();
   }
+
 
   uint64_t GetAndSaveBase(const char* module_name) {
     uint64_t bais = 0;
@@ -137,6 +164,82 @@ class TaintTrace {
     }
     return false;
   }
+
+  class RegAnalysis{
+    public:
+        RegAnalysis(TaintTrace* tracer){
+            this->tracer = tracer;
+        }
+        TaintTrace* tracer;
+        int Tr[4];
+        int Tw[4];
+        int Trw[2];
+        int Cr[4];
+        int Cw[4];
+        int Crw[2];
+        int Tr_idx = -1;
+        int Tw_idx = -1;
+        int Trw_idx = -1;
+        int Cr_idx = -1;
+        int Cw_idx = -1;
+        int Crw_idx = -1;
+        void reset(){
+            Tr_idx = -1;
+            Tw_idx = -1;
+            Trw_idx = -1;
+            Cr_idx = -1;
+            Cw_idx = -1;
+            Crw_idx = -1;
+        }
+        static bool IsValid(const int input) {return input>=0;}
+        void SetReg(int reg,enum RegAccess access){
+            if (!IsValid(reg))return;
+          switch (access) {
+              case READ:
+                  if (tracer->IsTaint(reg)){
+                      Tr[++Tr_idx] = reg;
+                  } else {
+                      Cr[++Cr_idx] = reg;
+                  }
+                  break;
+              case WRITE:
+                  if (tracer->IsTaint(reg)){
+                      Tw[++Tw_idx] = reg;
+                  } else {
+                      Cw[++Cw_idx] = reg;
+                  }
+                  break;
+              case READ_WRITE:
+                  if (tracer->IsTaint(reg)){
+                      Trw[++Trw_idx] = reg;
+                  } else {
+                      Crw[++Crw_idx] = reg;
+                  }
+                  break;
+          }
+        }
+        void PrintReg(std::ofstream& log,const QBDI::GPRState *gpr,bool before){
+            int Tr_idx=this->Tr_idx,Tw_idx=this->Tw_idx,Trw_idx=this->Trw_idx;
+            int Cr_idx=this->Cr_idx,Cw_idx=this->Cw_idx,Crw_idx=this->Crw_idx;
+
+            if (before) {
+                while (IsValid(Tr_idx))
+                    log << SPACE << tracer->TName(Tr[Tr_idx]) << EQ<< PRINT_GPR(Tr[Tr_idx--]) + SPACE;
+                while (IsValid(Cr_idx))
+                    log << SPACE << tracer->TName(Cr[Cr_idx]) << EQ<< PRINT_GPR(Cr[Cr_idx--]) + SPACE;
+            }
+            while (IsValid(Tw_idx))
+                log << SPACE << tracer->TName(Tw[Tw_idx]) << EQ << PRINT_GPR(Tw[Tw_idx--]) + SPACE;
+            while (IsValid(Cw_idx))
+                log << SPACE << tracer->TName(Cw[Cw_idx]) << EQ << PRINT_GPR(Cw[Cw_idx--]) + SPACE;
+            while (IsValid(Trw_idx))
+                log << SPACE << tracer->TName(Trw[Trw_idx]) << EQ << PRINT_GPR(Trw[Trw_idx--]) + SPACE;
+            while (IsValid(Crw_idx))
+                log << SPACE << tracer->TName(Crw[Crw_idx]) << EQ << PRINT_GPR(Crw[Crw_idx--]) + SPACE;
+        }
+
+    };
+    RegAnalysis anal = RegAnalysis(this);
 
 };
 #endif  // EZMYDROID_TAINTANALYZE_H

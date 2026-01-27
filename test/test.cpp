@@ -7,8 +7,7 @@
 #include <iostream>
 #include <stdint.h>
 #include "frida-gum.h"
-#define DELTA 0x9e3779b9
-#define MX (((z>>5^y<<2) + (y>>3^z<<4)) ^ ((sum^y) + (key[(p&3)^e] ^ z)))
+
 // 容易魔改
 #include <iostream>
 #include <cstdint>
@@ -98,6 +97,9 @@ uint64_t time_test() {
   time_t  now = time(NULL);
   return now;
 }
+
+#define DELTA 0x9e3779b9
+#define MX (((z>>5^y<<2) + (y>>3^z<<4)) ^ ((sum^y) + (key[(p&3)^e] ^ z)))
 void btea(uint32_t * v, int n, uint32_t const key[4]) {
 
     //v 为数据，n 为数据长度 (负时为解密)，key 为密钥
@@ -175,7 +177,7 @@ int main()
     // taint_trace((void*)&btea,1,(uint64_t)flag,16,2);
     // setbuf(stdout, NULL);
     // taint_trace_str((uint64_t)&btea,1,(char*)flag,TRACE_MODE);
-    trace((uint64_t)&btea,0,1,DEBUG_MODE);
+    trace((uint64_t)&btea,0,1,ASM_MODE);
     add_taint_range((uint64_t)flag,16);
     LOGD("test begin");
     btea((uint32_t*)flag,4,(uint32_t*)key);
