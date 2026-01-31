@@ -99,7 +99,7 @@ QBDI::VMAction TaintTrace::InstTrace(const QBDI::VM *vm,
 
     const QBDI::InstAnalysis *inst = vm->getInstAnalysis(
             QBDI::ANALYSIS_INSTRUCTION | QBDI::ANALYSIS_SYMBOL |
-                 QBDI::ANALYSIS_DISASSEMBLY | QBDI::ANALYSIS_OPERANDS);
+                 QBDI::ANALYSIS_DISASSEMBLY | QBDI::ANALYSIS_OPERANDS );
 
 
     if (!inst) return QBDI::CONTINUE;
@@ -128,6 +128,8 @@ QBDI::VMAction TaintTrace::InstTrace(const QBDI::VM *vm,
     int Cr_idx=anal.Cr_idx,Cw_idx=anal.Cw_idx,Crw_idx=anal.Crw_idx;
 
     // trace
+    AnalysisInstType(inst);
+
     if (IsDebugMode()||IsTraceMode())
     {
 
@@ -197,6 +199,7 @@ QBDI::VMAction TaintTrace::InstTrace(const QBDI::VM *vm,
             }
     }
 
+
     SetPostInstFlag();
     if (IsValid(Cr_idx))
     {
@@ -226,13 +229,16 @@ void TaintTrace::PostInstTrace(QBDI::VM *vm, const QBDI::GPRState *gpr, QBDI::FP
         log << ENTER;
         anal.PrintReg(all_log,gpr, false);
         all_log << ENTER;
+        if (inst_type == CALL) all_log << ENTER;
         if(NeedFlush()) all_log.flush();
         return;
-
     }
+
     // todo... fix:debug mode taint.asm will lose post reg value
     anal.PrintReg(log,gpr, false);
+
     log << ENTER;
+    if (inst_type == CALL) log << ENTER;
     // if(needFlush()) log.flush();
 }
 void TaintTrace::MemoryTrace(const QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRState *fpr) {

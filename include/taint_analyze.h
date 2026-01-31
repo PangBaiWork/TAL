@@ -54,6 +54,12 @@ enum RegAccess{
     READ_WRITE
 };
 
+enum InstOprandType{
+    NONE,
+    CALL,
+    RET,
+    IF_JMP, // for loop jmp
+};
 
 // using namespace std;
 class TaintTrace {
@@ -61,7 +67,8 @@ class TaintTrace {
   bool trace_all = false;
   uint64_t trace_end = 0;
   TaintMemory memory;
-  std::vector<MemoryRange> avoid_range;
+    std::vector<MemoryRange> escape_execute;
+    std::vector<MemoryRange> avoid_range;
   std::map<std::string,uint64_t> base_map;
   RegsState state;
   uint64_t base;
@@ -69,6 +76,8 @@ class TaintTrace {
   std::ofstream log;
   std::ofstream all_log;
   Instruction disassembler;
+  bool is_enter = false;
+  InstOprandType inst_type = NONE;
 
 //  int16_t taint_r[4] ={-1,-1,-1}, taint_w[4] = {}, rwreg[2] = {-1, -1};  // for post reg
 
@@ -76,7 +85,6 @@ class TaintTrace {
   RegArray reg_name;
   char *taint_str = nullptr;
 
-  void PrintReg(const QBDI::GPRState *state);
   QBDI::VMAction InstTrace(const QBDI::VM *vm, const QBDI::GPRState *gpr,QBDI::FPRState *fpr);
   void PostInstTrace(QBDI::VM *vm, const QBDI::GPRState *gpr,QBDI::FPRState *fpr);
   void MemoryTrace(const QBDI::VM *vm, QBDI::GPRState *gpr,
@@ -98,6 +106,17 @@ class TaintTrace {
   bool  NeedFlush() const { return true;}
   ~TaintTrace() {
     log.close();
+  }
+  void  AnalysisInstType(const QBDI::InstAnalysis *inst) {
+      if (inst->isCall){
+          inst_type = CALL;
+      } else if (inst->isReturn){
+          inst_type = RET;
+      } else if (inst->isPredicable && inst->isBranch){
+          inst_type = IF_JMP;
+      } else {
+          inst_type = NONE;
+      }
   }
 
 
@@ -171,18 +190,8 @@ class TaintTrace {
             this->tracer = tracer;
         }
         TaintTrace* tracer;
-        int Tr[4];
-        int Tw[4];
-        int Trw[2];
-        int Cr[4];
-        int Cw[4];
-        int Crw[2];
-        int Tr_idx = -1;
-        int Tw_idx = -1;
-        int Trw_idx = -1;
-        int Cr_idx = -1;
-        int Cw_idx = -1;
-        int Crw_idx = -1;
+        int Tr[4]={},Tw[4]={},Trw[2]={},Cr[4]={},Cw[4]={},Crw[2]={};
+        int Tr_idx = -1,Tw_idx = -1,Trw_idx = -1,Cr_idx = -1,Cw_idx = -1,Crw_idx = -1;
         void reset(){
             Tr_idx = -1;
             Tw_idx = -1;
@@ -193,7 +202,7 @@ class TaintTrace {
         }
         static bool IsValid(const int input) {return input>=0;}
         void SetReg(int reg,enum RegAccess access){
-            if (!IsValid(reg))return;
+            if (!IsValid(reg)||reg >= (sizeof(QBDI::GPR_NAMES)/sizeof(QBDI::GPR_NAMES[0])))return;
           switch (access) {
               case READ:
                   if (tracer->IsTaint(reg)){

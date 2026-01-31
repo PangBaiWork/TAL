@@ -7,6 +7,65 @@
 #include "utils.h"
 #include "vm.h"
 
+
+
+#include <boost/context/continuation.hpp>
+#include <boost/context/stack_context.hpp>
+#include <cstdint>
+#include <cstddef>
+#include <memory>
+#include <exception>
+#include <utility>
+
+namespace ctx = boost::context;
+
+struct RawBufferStack {
+    std::unique_ptr<std::uint8_t[]> buf;
+    std::size_t size;
+    explicit RawBufferStack(std::size_t n) : buf(new std::uint8_t[n]), size(n) {}
+};
+
+struct BorrowedStackAllocator {
+    RawBufferStack* backing;
+
+    ctx::stack_context allocate() {
+        ctx::stack_context sctx{};
+        std::uintptr_t base = reinterpret_cast<std::uintptr_t>(backing->buf.get());
+        std::uintptr_t top  = base + backing->size;
+        top &= ~std::uintptr_t(0xF);          // 16-byte 对齐（很重要）
+        sctx.size = backing->size;
+        sctx.sp   = reinterpret_cast<void*>(top); // 栈顶（高地址）
+        return sctx;
+    }
+
+    void deallocate(ctx::stack_context&) noexcept {}
+};
+
+template<class F>
+void run_on_stack(BorrowedStackAllocator& alloc, F&& fn) {
+    std::exception_ptr ep;
+
+    // callcc 会：创建上下文 + 切到新栈 + 执行 lambda
+    // lambda 返回 sink 后：立刻切回调用者（main）并从 callcc 返回
+    (void)ctx::callcc(std::allocator_arg, alloc,
+                      [&](ctx::continuation&& sink) -> ctx::continuation {
+                          try {
+                              std::forward<F>(fn)();   // 你的函数在“新栈”上执行
+                          } catch (...) {
+                              ep = std::current_exception(); // 不让异常跨上下文边界乱跑
+                          }
+                          return std::move(sink);      // 执行完立即回到调用者
+                      }
+    );
+
+    if (ep) std::rethrow_exception(ep);
+}
+
+
+void escape_on_enter(GumInvocationContext *context, gpointer user_data) {
+
+}
+
 //GumInvocationListener *g_listener = nullptr;
 //GumInterceptor *g_interceptor = nullptr;
 TaintTrace *cur_tracer = nullptr;
@@ -20,23 +79,38 @@ static void on_enter(GumInvocationContext *context, gpointer user_data) {
     // memcpy(&g_cpu_context,context->cpu_context,sizeof(GumCpuContext));
     void *address = context->function;
     gum_interceptor_detach(data->interceptor,data->listener);
-    gum_invocation_context_get_listener_function_data(context);
     const clock_t start = clock();
 //    QBDI::setLogPriority(QBDI::DEBUG);
 //    QBDI::setLogFile("log.asm", true);
 
-    QBDI::VM qvm = init(address, tracer);
-#if defined(__x86_64__)
-    qvm.setOptions(QBDI::OPT_ENABLE_FS_GS);
+    std::shared_ptr<QBDI::VM> qvm = init(address, tracer);
+
+#if defined(__x86_64__) || defined(_M_X64)
+    // qvm->setOptions(QBDI::OPT_ENABLE_FS_GS);
 #endif
 
-    const auto state = qvm.getGPRState();
+    const auto state = qvm->getGPRState();
     syn_reg_gum(context->cpu_context, state, true);
+
     // state->fs=get_fs_selector();
     // state->gs=get_gs_selector();
     // state->fs=get_fs_base();
     // state->gs=get_gs_base();
-    qvm.run(reinterpret_cast<QBDI::rword>(address), tracer->trace_end);
+
+    RawBufferStack stack(1 << 24); // 16 MiB
+    BorrowedStackAllocator alloc{ &stack };
+
+    run_on_stack(alloc, [qvm,address,tracer]{
+        LOGI("[vm] run once on custom stack\n");
+        uint64_t start = reinterpret_cast<uint64_t>(address);
+        for (auto & range : tracer->escape_execute) {
+            qvm->run(start,range.min);
+            start = range.max;
+        }
+        qvm->run(start, tracer->trace_end);
+    });
+
+
     syn_reg_gum(context->cpu_context, state, false);
     const clock_t end = clock();
     LOGI("time: %d", (end - start) / CLOCKS_PER_SEC);
@@ -59,8 +133,8 @@ C_EXPORT void trace(const uint64_t addr, const uint64_t end, const bool all,
                               on_enter, cur_tracer);
     LOGI("hooked");
 }
-
-
+//0x7fe668d670 0x7fe668d6a0
+//0x7fe668d670 0x7fe668d6a0
 C_EXPORT void taint_trace(uint64_t addr, const bool all,
                           const uint64_t taint_addr, const int taint_size,
                           int mode) {
@@ -108,6 +182,13 @@ C_EXPORT bool remove_range(uint64_t start, const uint64_t size) {
         return true;
     }
     return false;
+}
+
+
+C_EXPORT void set_escape(uint64_t start,uint64_t end) {
+    if (cur_tracer) {
+        cur_tracer->escape_execute.emplace_back(start, end);
+    }
 }
 C_EXPORT bool add_taint_range(const uint64_t addr, const uint64_t size) {
     if (cur_tracer) {

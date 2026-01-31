@@ -45,7 +45,7 @@ struct extends {
 
 
 
- QBDI::VM init(void *address,TaintTrace *tracer);
+std::shared_ptr<QBDI::VM>init(void *address,TaintTrace *tracer);
 
 
 #endif //QBDIRECORDER_VM_H

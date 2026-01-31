@@ -7,7 +7,7 @@
 
 
 
-class test {
+class android_test {
 
 };
 

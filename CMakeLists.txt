@@ -8,6 +8,11 @@ set(QBDI_ARCH "X86_64")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+set(QBDI_LOG_DEBUG ON)
+set(CMAKE_BUILD_PARALLEL_LEVEL 8)
+set(CMAKE_BUILD_TYPE Debug)
+set(TARGET_NAME "attd")
+project(${TARGET_NAME})
 
 if(CMAKE_HOST_SYSTEM_NAME MATCHES "Linux")
     set(QBDI_PLATFORM "linux")
@@ -16,6 +21,8 @@ if(CMAKE_HOST_SYSTEM_NAME MATCHES "Linux")
 elseif(CMAKE_HOST_SYSTEM_NAME MATCHES "Windows")
     set(QBDI_PLATFORM "windows")
     message("current platform: Windows ")
+    enable_language(ASM)
+    enable_language(ASM_MASM)
 else()
     message("current platform: unkonw ")
 endif()
@@ -32,12 +39,11 @@ if(ANDROID OR CMAKE_SYSTEM_NAME STREQUAL "Android")
     message(STATUS "Android API level: ${ANDROID_PLATFORM}")
 endif()
 
+set(Boost_USE_STATIC_LIBS ON) # 使用静态库
+set(BOOST_INCLUDE_LIBRARIES context)
+add_subdirectory(boost-1.90.0)
 
 
-set(QBDI_LOG_DEBUG ON)
-set(CMAKE_BUILD_PARALLEL_LEVEL 8)
-set(CMAKE_BUILD_TYPE Debug)
-set(TARGET_NAME "attd")
 
 if(QBDI_PLATFORM STREQUAL "windows")
     message(STATUS "Windows")
@@ -56,14 +62,12 @@ if(QBDI_PLATFORM STREQUAL "windows")
     add_compile_options($<$<CXX_COMPILER_ID:MSVC>:/MP${CPU_NUMBER_OF_LOGICAL_CORES}>)
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /Z7")
     set(CMAKE_SHARED_LINKER_FLAGS_DEBUG "${CMAKE_SHARED_LINKER_FLAGS_DEBUG} /DEBUG:FULL")
-    set(ASM_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/asm/fs_gs_x64_msvc.asm")
 
 else(QBDI_PLATFORM STREQUAL "linux" OR QBDI_PLATFORM STREQUAL "android")
     message(STATUS "Linux or Android")
     set(FRIDA_LIB "libfrida-gum.a")
     set(QBDI_LIB "libQBDI.a")
     set(CMAKE_CXX_FLAGS_RELEASE " -DNDEBUG -ffast-math -flto -fomit-frame-pointer -funroll-loops -fno-stack-protector")
-    set(ASM_FILES "")
 endif()
 
 
@@ -72,12 +76,14 @@ add_compile_definitions(ULTRA_FAST_MODE=1)
 add_subdirectory(qbdi-src)
 
 
-project(TARGET_NAME)
+
 set(HOME ${PROJECT_SOURCE_DIR})
 include_directories(
         ${CMAKE_CURRENT_SOURCE_DIR}/include/
         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/${QBDI_PLATFORM}/frida
-#        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/${QBDI_PLATFORM}
+        ${CMAKE_CURRENT_SOURCE_DIR}/boost-1.90.0/libs/context/include
+
+        #        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/${QBDI_PLATFORM}
 )
 
 FILE(GLOB_RECURSE FILE_SOURCES
@@ -89,20 +95,20 @@ message("Variable value: ${FILE_SOURCES}")
 add_library(${TARGET_NAME} SHARED
         ${FILE_SOURCES}
         library.cpp
-        ${ASM_FILES}
+#        src/asm/fs_gs_x64_msvc.asm
 )
 #target_compile_options(${TARGET_NAME} PRIVATE -mstackrealign)
 add_library(${TARGET_NAME}_static STATIC
         ${FILE_SOURCES}
         library.cpp
-        ${ASM_FILES}
+#        src/asm/fs_gs_x64_msvc.asm
 )
 
 
 
 if(QBDI_PLATFORM STREQUAL "windows")
     add_compile_definitions(_HAS_STD_BYTE=0)
-    enable_language(ASM_MASM)
+
 endif ()
 
 add_library(frida-gum STATIC IMPORTED)
@@ -123,11 +129,13 @@ target_link_libraries(${TARGET_NAME}_static
 
         frida-gum
         QBDI_static
+        Boost::context
 )
 
 target_link_libraries(${TARGET_NAME}
         frida-gum
         QBDI_static
+        Boost::context
 )
 
 add_executable(${TARGET_NAME}_test

@@ -40,7 +40,7 @@ int GetSameStrLen(const char *str1, const char *str2) {
 
 #define PRINT_REG(reg) LOGI(#reg "_F:%llx,", cpu->reg)
 #define PRINT_QBDI_REG(reg) LOGI(#reg "_Q:%llx,", state->reg)
-#if defined(__x86_64__)
+#if defined(__x86_64__) || defined(_M_X64)
 // X86_64
 
 void syn_reg_gum(GumCpuContext *cpu, QBDI::GPRState *state, bool F2Q) {
@@ -174,5 +174,4 @@ void print_qbdi_reg(QBDI::GPRState *state) {
 #elif defined(__i386__)
   // x86 32-bit
 #endif
-
 

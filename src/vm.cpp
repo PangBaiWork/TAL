@@ -77,28 +77,28 @@ VMAction memWRAccess(VM *vm, GPRState *gprState, FPRState *fprState, void *data)
 }
 
 
-VM init(void *address,TaintTrace *tracer) {
-    VM qvm{};
+std::shared_ptr<VM> init(void *address,TaintTrace *tracer) {
+    auto qvm = std::make_unique<VM>();
     auto *data = new extends(tracer);
     if (!tracer->IsTraceMode())
     {
-        qvm.addMemAccessCB(MEMORY_READ_WRITE,memWRAccess,data);
+        qvm->addMemAccessCB(MEMORY_READ_WRITE,memWRAccess,data);
     }
 
-    qvm.addCodeCB(POSTINST, postInstruction, data);
-    qvm.addCodeCB(PREINST, preInstruction, data);
+    qvm->addCodeCB(POSTINST, postInstruction, data);
+    qvm->addCodeCB(PREINST, preInstruction, data);
 
 
     if (tracer->trace_all){
-        qvm.instrumentAllExecutableMaps();
+        qvm->instrumentAllExecutableMaps();
         for (const MemoryRange & range : tracer->avoid_range) {
-            qvm.removeInstrumentedRange(range.min,range.max);
+            qvm->removeInstrumentedRange(range.min,range.max);
         }
     }else {
-        qvm.addInstrumentedModuleFromAddr(reinterpret_cast<rword>(address));
+        qvm->addInstrumentedModuleFromAddr(reinterpret_cast<rword>(address));
     }
 
-     removeConflictModule(qvm);
+     removeConflictModule(*qvm);
 
 
     return qvm;
@@ -177,7 +177,8 @@ void removeConflictModule(VM& vm) {
   size_t size;
   qbdi_MemoryMap *modules=qbdi_getCurrentProcessMaps(false, &size);
   for (size_t i = 0; i < size; i++) {
-    LOGD("module:%s",modules[i].name);
+
+//    LOGD("module:%s",modules[i].name);
     if ((modules[i].permission & QBDI_PF_EXEC) &&
         (strstr(modules[i].name, "libart.so")       ||
          strstr(modules[i].name, "libEGL.so")       ||

@@ -183,11 +183,11 @@ public:
     // 非污点寄存器：返回从 1 开始的 char\*（跳过 '*'）
     const char* operator[](int idx) const {
         if (idx < 0 || idx >= static_cast<int>(names.size())) {
-            return nullptr;
+            return "unk";
         }
         const char* base = names[idx];
         if (base == nullptr || state == nullptr) {
-            return nullptr;
+            return "unk";
         }
 
         if (state->IsTaintReg(idx)) {

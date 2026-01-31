@@ -88,7 +88,7 @@ void free_test() {
   }
 }
 void memcpy_test() {
-  unsigned char source[0x200];
+  unsigned char source[0x200]="1";
   unsigned char destination[0x200];
   memcpy(destination, source, 0x200);
 }
@@ -102,6 +102,8 @@ uint64_t time_test() {
 #define MX (((z>>5^y<<2) + (y>>3^z<<4)) ^ ((sum^y) + (key[(p&3)^e] ^ z)))
 void btea(uint32_t * v, int n, uint32_t const key[4]) {
 
+    LOGD("testing");
+    memcpy_test();
     //v 为数据，n 为数据长度 (负时为解密)，key 为密钥
     uint32_t y,  z, sum;  unsigned p, rounds, e;
     if (n > 1)
@@ -145,8 +147,8 @@ void btea(uint32_t * v, int n, uint32_t const key[4]) {
 
 
 
-  // free_test();
-  memcpy_test();
+  free_test();
+
   time_test();
   void (*funcPtr)();
   funcPtr=reg_jmp_test;
@@ -177,8 +179,10 @@ int main()
     // taint_trace((void*)&btea,1,(uint64_t)flag,16,2);
     // setbuf(stdout, NULL);
     // taint_trace_str((uint64_t)&btea,1,(char*)flag,TRACE_MODE);
-    trace((uint64_t)&btea,0,1,ASM_MODE);
+    trace((uint64_t)&btea,0,1,TRACE_MODE);
     add_taint_range((uint64_t)flag,16);
+    remove_range((uint64_t)memcpy_test,4);
+    remove_range((uint64_t)fprintf,4);
     LOGD("test begin");
     btea((uint32_t*)flag,4,(uint32_t*)key);
     LOGD("test finish");
