@@ -7,83 +7,66 @@
 #include "utils.h"
 #include "vm.h"
 
-
-
-#include <boost/context/continuation.hpp>
-#include <boost/context/stack_context.hpp>
-#include <cstdint>
-#include <cstddef>
-#include <memory>
-#include <exception>
-#include <utility>
-
-namespace ctx = boost::context;
-
-struct RawBufferStack {
-    std::unique_ptr<std::uint8_t[]> buf;
-    std::size_t size;
-    explicit RawBufferStack(std::size_t n) : buf(new std::uint8_t[n]), size(n) {}
-};
-
-struct BorrowedStackAllocator {
-    RawBufferStack* backing;
-
-    ctx::stack_context allocate() {
-        ctx::stack_context sctx{};
-        std::uintptr_t base = reinterpret_cast<std::uintptr_t>(backing->buf.get());
-        std::uintptr_t top  = base + backing->size;
-        top &= ~std::uintptr_t(0xF);          // 16-byte 对齐（很重要）
-        sctx.size = backing->size;
-        sctx.sp   = reinterpret_cast<void*>(top); // 栈顶（高地址）
-        return sctx;
-    }
-
-    void deallocate(ctx::stack_context&) noexcept {}
-};
-
-template<class F>
-void run_on_stack(BorrowedStackAllocator& alloc, F&& fn) {
+template <class F>
+void run_on_stack(BorrowedStackAllocator &alloc, F &&fn) {
     std::exception_ptr ep;
 
     // callcc 会：创建上下文 + 切到新栈 + 执行 lambda
     // lambda 返回 sink 后：立刻切回调用者（main）并从 callcc 返回
-    (void)ctx::callcc(std::allocator_arg, alloc,
-                      [&](ctx::continuation&& sink) -> ctx::continuation {
-                          try {
-                              std::forward<F>(fn)();   // 你的函数在“新栈”上执行
-                          } catch (...) {
-                              ep = std::current_exception(); // 不让异常跨上下文边界乱跑
-                          }
-                          return std::move(sink);      // 执行完立即回到调用者
-                      }
-    );
+    (void)ctx::callcc(
+        std::allocator_arg, alloc,
+        [&](ctx::continuation &&sink) -> ctx::continuation {
+            try {
+                std::forward<F>(fn)();  // 你的函数在“新栈”上执行
+            } catch (...) {
+                ep = std::current_exception();  // 不让异常跨上下文边界乱跑
+            }
+            return std::move(sink);  // 执行完立即回到调用者
+        });
 
     if (ep) std::rethrow_exception(ep);
 }
 
-
 void escape_on_enter(GumInvocationContext *context, gpointer user_data) {
+    LOGI("escape attached");
+    auto data = static_cast<CallbackData *>(user_data);
+    TaintTrace *tracer = data->tracer;
+    std::shared_ptr<QBDI::VM> qvm = tracer->qvm;
+    gum_interceptor_detach(data->interceptor, data->listener);
+    uint64_t address = reinterpret_cast<uint64_t>(context->function);
 
+    run_on_stack(*tracer->alloc, [qvm, address, tracer] {
+        LOGI("[vm] run once on custom stack\n");
+        uint64_t start = address;
+        qvm->run(start, tracer->trace_end);
+    });
 }
 
-//GumInvocationListener *g_listener = nullptr;
-//GumInterceptor *g_interceptor = nullptr;
+// GumInvocationListener *g_listener = nullptr;
+// GumInterceptor *g_interceptor = nullptr;
 TaintTrace *cur_tracer = nullptr;
 char *g_taint_str = nullptr;
 
 static void on_enter(GumInvocationContext *context, gpointer user_data) {
+    // context->function
     print_frida_reg(context->cpu_context);
     LOGI("begin");
-    auto* data= (CallbackData*)user_data;
-    TaintTrace* tracer = data->tracer;
+    auto data = static_cast<CallbackData *>(user_data);
+    TaintTrace *tracer = data->tracer;
     // memcpy(&g_cpu_context,context->cpu_context,sizeof(GumCpuContext));
     void *address = context->function;
-    gum_interceptor_detach(data->interceptor,data->listener);
-    const clock_t start = clock();
-//    QBDI::setLogPriority(QBDI::DEBUG);
-//    QBDI::setLogFile("log.asm", true);
+    gum_interceptor_detach(data->interceptor, data->listener);
+    QBDI::setLogPriority(QBDI::DEBUG);
+    QBDI::setLogFile("log.asm", true);
 
     std::shared_ptr<QBDI::VM> qvm = init(address, tracer);
+    tracer->qvm = qvm;
+    for (const auto &range : tracer->escape_execute) {
+        LOGI("attach: %llx",range.max);
+        HookUtils::gum_attach(data->interceptor,
+                              reinterpret_cast<void *>(range.max),
+                              escape_on_enter, tracer);
+    }
 
 #if defined(__x86_64__) || defined(_M_X64)
     // qvm->setOptions(QBDI::OPT_ENABLE_FS_GS);
@@ -97,23 +80,21 @@ static void on_enter(GumInvocationContext *context, gpointer user_data) {
     // state->fs=get_fs_base();
     // state->gs=get_gs_base();
 
-    RawBufferStack stack(1 << 24); // 16 MiB
-    BorrowedStackAllocator alloc{ &stack };
-
-    run_on_stack(alloc, [qvm,address,tracer]{
+    auto stack = std::make_unique<RawBufferStack>(1 << 24);  // 16 Mi
+    const std::shared_ptr<BorrowedStackAllocator> alloc(
+        new BorrowedStackAllocator{stack.get()});
+    tracer->alloc = alloc;
+    // 3. 在自定义栈上运行
+    //    run_on_stack 接收引用，所以使用 *alloc 解引用智能指针
+    run_on_stack(*alloc, [qvm, address, tracer] {
         LOGI("[vm] run once on custom stack\n");
         uint64_t start = reinterpret_cast<uint64_t>(address);
-        for (auto & range : tracer->escape_execute) {
-            qvm->run(start,range.min);
-            start = range.max;
-        }
         qvm->run(start, tracer->trace_end);
     });
 
-
-    syn_reg_gum(context->cpu_context, state, false);
-    const clock_t end = clock();
-    LOGI("time: %d", (end - start) / CLOCKS_PER_SEC);
+    // syn_reg_gum(context->cpu_context, state, false);
+    // const clock_t end = clock();
+    // LOGI("time: %d", (end - start) / CLOCKS_PER_SEC);
     LOGI("end");
 }
 
@@ -129,12 +110,12 @@ C_EXPORT void trace(const uint64_t addr, const uint64_t end, const bool all,
     cur_tracer->trace_end = end;
 
     auto interceptor = gum_interceptor_obtain();
-    HookUtils::gum_attach(interceptor, reinterpret_cast<void *>(addr),
-                              on_enter, cur_tracer);
+    HookUtils::gum_attach(interceptor, reinterpret_cast<void *>(addr), on_enter,
+                          cur_tracer);
     LOGI("hooked");
 }
-//0x7fe668d670 0x7fe668d6a0
-//0x7fe668d670 0x7fe668d6a0
+// 0x7fe668d670 0x7fe668d6a0
+// 0x7fe668d670 0x7fe668d6a0
 C_EXPORT void taint_trace(uint64_t addr, const bool all,
                           const uint64_t taint_addr, const int taint_size,
                           int mode) {
@@ -150,8 +131,8 @@ C_EXPORT void taint_trace(uint64_t addr, const bool all,
     cur_tracer->AddTaintMemory(*taint);
 
     auto interceptor = gum_interceptor_obtain();
-    HookUtils::gum_attach(interceptor, reinterpret_cast<void *>(addr),
-                              on_enter, cur_tracer);
+    HookUtils::gum_attach(interceptor, reinterpret_cast<void *>(addr), on_enter,
+                          cur_tracer);
     LOGE("hooked");
 }
 
@@ -169,10 +150,10 @@ C_EXPORT void taint_trace_str(uint64_t addr, bool all, char *taint_str,
     cur_tracer->trace_end = 0;
     cur_tracer->SetTaintStr(g_taint_str);
 
-    auto  interceptor = gum_interceptor_obtain();
+    auto interceptor = gum_interceptor_obtain();
 
-    HookUtils::gum_attach(interceptor, reinterpret_cast<void *>(addr),
-                              on_enter, cur_tracer);
+    HookUtils::gum_attach(interceptor, reinterpret_cast<void *>(addr), on_enter,
+                          cur_tracer);
     LOGE("hooked");
 }
 
@@ -184,8 +165,7 @@ C_EXPORT bool remove_range(uint64_t start, const uint64_t size) {
     return false;
 }
 
-
-C_EXPORT void set_escape(uint64_t start,uint64_t end) {
+C_EXPORT void set_escape(uint64_t start, uint64_t end) {
     if (cur_tracer) {
         cur_tracer->escape_execute.emplace_back(start, end);
     }
@@ -198,15 +178,14 @@ C_EXPORT bool add_taint_range(const uint64_t addr, const uint64_t size) {
     return false;
 }
 
-C_EXPORT bool set_log_path(const char* path) {
-    const auto  log_path = std::string(path);
+C_EXPORT bool set_log_path(const char *path) {
+    const auto log_path = std::string(path);
     if (cur_tracer) {
         cur_tracer->SetOutputPath(&log_path);
         return true;
     }
     return false;
 }
-
 
 C_INIT void init_main() {
     gum_init_embedded();

@@ -97,6 +97,10 @@ std::shared_ptr<VM> init(void *address,TaintTrace *tracer) {
     }else {
         qvm->addInstrumentedModuleFromAddr(reinterpret_cast<rword>(address));
     }
+    for (const MemoryRange & range : tracer->escape_execute) {
+        // todo asm size 4 is not always correct
+        qvm->removeInstrumentedRange(range.min,range.min+4);
+    }
 
      removeConflictModule(*qvm);
 

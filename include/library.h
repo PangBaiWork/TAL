@@ -44,4 +44,5 @@ C_EXPORT void trace(uint64_t addr, uint64_t end, bool all,
 C_EXPORT bool remove_range(uint64_t start, uint64_t size);
 C_EXPORT bool add_taint_range(uint64_t addr, uint64_t size);
 C_EXPORT bool set_log_path(const char* path);
+C_EXPORT void set_escape(uint64_t start, uint64_t end);
 #endif // LIBRARY_H

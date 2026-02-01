@@ -37,4 +37,37 @@ void syn_reg_gum(GumCpuContext *cpu, QBDI::GPRState *state, bool F2Q);
 int GetSameStrLen(const char *str1, const char *str2);
 void print_frida_reg(GumCpuContext *cpu);
 void print_qbdi_reg(QBDI::GPRState *state);
+
+
+#include <boost/context/continuation.hpp>
+#include <boost/context/stack_context.hpp>
+#include <cstdint>
+#include <cstddef>
+#include <memory>
+#include <exception>
+#include <utility>
+
+namespace ctx = boost::context;
+
+struct RawBufferStack {
+    std::unique_ptr<std::uint8_t[]> buf;
+    std::size_t size;
+    explicit RawBufferStack(std::size_t n) : buf(new std::uint8_t[n]), size(n) {}
+};
+
+struct BorrowedStackAllocator {
+    RawBufferStack* backing;
+
+    ctx::stack_context allocate() {
+        ctx::stack_context sctx{};
+        std::uintptr_t base = reinterpret_cast<std::uintptr_t>(backing->buf.get());
+        std::uintptr_t top  = base + backing->size;
+        top &= ~std::uintptr_t(0xF);          // 16-byte 对齐（很重要）
+        sctx.size = backing->size;
+        sctx.sp   = reinterpret_cast<void*>(top); // 栈顶（高地址）
+        return sctx;
+    }
+
+    void deallocate(ctx::stack_context&) noexcept {}
+};
 #endif //UTILS_H
