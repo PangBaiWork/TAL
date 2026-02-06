@@ -61,6 +61,7 @@ enum InstOprandType {
 // using namespace std;
 class TaintTrace {
    public:
+    int printable_size = 4;
     std::shared_ptr<BorrowedStackAllocator> alloc;
     std::shared_ptr<QBDI::VM> qvm;
     bool trace_all = false;
@@ -145,7 +146,10 @@ class TaintTrace {
 #if defined(__aarch64__)
         // for wzr(idx 32) : subs xzr, x0, x1
         // when keep flag but lost result
-        if (reg == 32) return false;
+        if (reg == QBDI::REG_FLAG) return false;
+        if (reg == QBDI::REG_BP) return false;
+        if (reg == QBDI::REG_SP) return false;
+        if (reg == QBDI::REG_LR) return false;
 #endif
 
         state.SetTaintReg(reg, ref);

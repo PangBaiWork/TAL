@@ -180,10 +180,10 @@ int main()
     // setbuf(stdout, NULL);
     // taint_trace_str((uint64_t)&btea,1,(char*)flag,TRACE_MODE);
     trace((uint64_t)&btea,0,1,TRACE_MODE);
-    // add_taint_range((uint64_t)flag,16);
-    // remove_range((uint64_t)memcpy_test,4);
+    add_taint_range((uint64_t)flag,16);
+    remove_range((uint64_t)memcpy_test,4);
     // remove_range((uint64_t)fprintf,4);
-    // set_escape((uint64_t)memcpy_test+0x1a,(uint64_t)memcpy_test+0x5a);
+    // set_escape((uint64_t)memcpy_test,(uint64_t)memcpy_test+0x5a);
     LOGD("test begin");
     btea((uint32_t*)flag,4,(uint32_t*)key);
     LOGD("test finish");

@@ -226,7 +226,7 @@ void TaintTrace::PostInstTrace(QBDI::VM *vm, const QBDI::GPRState *gpr, QBDI::FP
     if (!enable_post_inst)return;
     CleanPostInstFlag();
     if (IsTraceMode()||IsDebugMode()) {
-        log << ENTER;
+        if (IsDebugMode())log << ENTER;
         anal.PrintReg(all_log,gpr, false);
         all_log << ENTER;
         if (inst_type == CALL) all_log << ENTER;
@@ -242,18 +242,64 @@ void TaintTrace::PostInstTrace(QBDI::VM *vm, const QBDI::GPRState *gpr, QBDI::FP
     // if(needFlush()) log.flush();
 }
 void TaintTrace::MemoryTrace(const QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRState *fpr) {
-    int taint_r[4] = { -1,-1,-1},taint_w[4] = {-1,-1,-1} ,taint_rw = -1;
-    int clear_r[4] = { -1,-1,-1},clear_w[4] = {-1,-1,-1} ,clear_rw = -1;
+    int taint_r[4] = { -1,-1,-1},taint_w[4] = {-1,-1,-1};
+    int taint_rw = -1,clear_rw = -1;
+    int clear_r[4] = { -1,-1,-1},clear_w[4] = {-1,-1,-1};
     int taint_r_idx = -1,taint_w_idx = -1,clear_r_idx = -1,clear_w_idx = -1;
 
     // int16_t rOpIdx = -1,wOpIdx = -1;
     std::vector<QBDI::MemoryAccess> access_list = vm->getInstMemoryAccess();
+
+    char flag = 0;
+    QBDI::MemoryAccess* access_p=nullptr;
+
+
+    for (QBDI::MemoryAccess &access:access_list){
+        switch (access.type){
+            case QBDI::MEMORY_READ:
+                flag |= QBDI::MEMORY_READ;
+                // for taint str
+                if (IsTraceMode()){
+                    if(IsPrintable((unsigned char*)access.accessAddress,printable_size)){
+                        all_log << "PrintableRead:[" << (char*) access.accessAddress << "]" << ENTER;
+                        return;
+                    }
+                }
+                CheckTaintedStr(access.accessAddress);
+                break;
+            case QBDI::MEMORY_WRITE:
+                flag |= QBDI::MEMORY_WRITE;
+                if (IsTraceMode()){
+                    if(IsPrintable((unsigned char*)access.accessAddress,printable_size)){
+                        all_log << "PrintableWrite:[" << (char*) access.accessAddress << "]" << ENTER;
+                        return;
+                    }
+                }
+                break;
+            case QBDI::MEMORY_READ_WRITE:
+                if (IsTraceMode()){
+                    if(IsPrintable((unsigned char*)access.accessAddress,printable_size)){
+                        all_log << "PrintableRead:[" << (char*) access.accessAddress << "]"  << ENTER;
+                        return;
+                    }
+                }
+                flag |= QBDI::MEMORY_READ_WRITE;
+                CheckTaintedStr(access.accessAddress);
+                break;
+        }
+        access_p = &access;
+    }
+    if (!access_p||IsTraceMode())return;
+
+
+
     const QBDI::InstAnalysis *inst = vm->getInstAnalysis(
             QBDI::ANALYSIS_INSTRUCTION |
             QBDI::ANALYSIS_DISASSEMBLY | QBDI::ANALYSIS_OPERANDS);
     if (!inst) return;
 
     const uint64_t offset = inst->address - base;
+
     // analyse operands
     for(int16_t idx = 0;idx < inst->numOperands;idx++) {
         const QBDI::OperandAnalysis &operand = inst->operands[idx];
@@ -278,26 +324,9 @@ void TaintTrace::MemoryTrace(const QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRS
         }
     }
 
-    char flag = 0;
-    QBDI::MemoryAccess* access_p=nullptr;
-    for (QBDI::MemoryAccess &access:access_list){
-        switch (access.type){
-            case QBDI::MEMORY_READ:
-                flag |= QBDI::MEMORY_READ;
-                // for taint str
-                CheckTaintedStr(access.accessAddress);
-            break;
-            case QBDI::MEMORY_WRITE:
-                flag |= QBDI::MEMORY_WRITE;
-            break;
-            case QBDI::MEMORY_READ_WRITE:
-                flag |= QBDI::MEMORY_READ_WRITE;
-                CheckTaintedStr(access.accessAddress);
-            break;
-        }
-        access_p = &access;
-    }
-    if (!access_p)return;
+
+
+
     QBDI::MemoryAccess& access=*access_p;
     switch (flag) {
         case QBDI::MEMORY_READ:
@@ -320,10 +349,10 @@ void TaintTrace::MemoryTrace(const QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRS
                             PrintMemoryOp(gpr,offset,&access,clear_w[clear_w_idx],-1);
                             SetTaintReg(clear_w[clear_w_idx--],0);
                         }
-                        while (IsValid(taint_w_idx))
-                            PrintMemoryOp(gpr,offset,&access,taint_w[taint_w_idx],-1);
-                            SetTaintReg(taint_w[taint_w_idx--],0);
-
+                        while (IsValid(taint_w_idx)) {
+                            PrintMemoryOp(gpr, offset, &access, taint_w[taint_w_idx], -1);
+                            SetTaintReg(taint_w[taint_w_idx--], 0);
+                        }
                     } else if(IsValid(clear_rw)||IsValid(taint_rw)){
 
                         /*      XOR REG, *[MEM]
@@ -372,8 +401,8 @@ void TaintTrace::MemoryTrace(const QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRS
              * stp *x1 *x2 ,[mem]
              **/
             if(IsValid(taint_r_idx)){
-                // todo: print all taint_r
-                while (IsValid(taint_r_idx))
+                // todo: str x1, [x2,x3]
+                while (IsValid(taint_r_idx)&&taint_r[taint_r_idx])
                     PrintMemoryOp(gpr, offset, &access, -1, taint_r[taint_r_idx--]);
                 // question: is stp case access.size = 16 ?
                 const bool result = memory.InsertBySize(access.accessAddress, access.size);

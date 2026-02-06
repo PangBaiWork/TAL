@@ -80,13 +80,9 @@ VMAction memWRAccess(VM *vm, GPRState *gprState, FPRState *fprState, void *data)
 std::shared_ptr<VM> init(void *address,TaintTrace *tracer) {
     auto qvm = std::make_unique<VM>();
     auto *data = new extends(tracer);
-    if (!tracer->IsTraceMode())
-    {
-        qvm->addMemAccessCB(MEMORY_READ_WRITE,memWRAccess,data);
-    }
-
-    qvm->addCodeCB(POSTINST, postInstruction, data);
     qvm->addCodeCB(PREINST, preInstruction, data);
+    qvm->addCodeCB(POSTINST, postInstruction, data,10);
+    qvm->addMemAccessCB(MEMORY_READ_WRITE,memWRAccess,data,-10);
 
 
     if (tracer->trace_all){
@@ -97,13 +93,14 @@ std::shared_ptr<VM> init(void *address,TaintTrace *tracer) {
     }else {
         qvm->addInstrumentedModuleFromAddr(reinterpret_cast<rword>(address));
     }
-    for (const MemoryRange & range : tracer->escape_execute) {
-        // todo asm size 4 is not always correct
-        qvm->removeInstrumentedRange(range.min,range.min+4);
-    }
+
 
      removeConflictModule(*qvm);
-
+    for (const MemoryRange & range : tracer->escape_execute) {
+        // todo asm size 4 is not always correct
+        LOGI("remove %llx",range.min);
+        qvm->removeInstrumentedRange(range.min,range.min+4);
+    }
 
     return qvm;
 }

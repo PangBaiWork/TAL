@@ -70,4 +70,7 @@ struct BorrowedStackAllocator {
 
     void deallocate(ctx::stack_context&) noexcept {}
 };
+
+
+int IsPrintable(unsigned char *str,int max);
 #endif //UTILS_H

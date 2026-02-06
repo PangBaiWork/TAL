@@ -36,7 +36,7 @@ void escape_on_enter(GumInvocationContext *context, gpointer user_data) {
     uint64_t address = reinterpret_cast<uint64_t>(context->function);
 
     run_on_stack(*tracer->alloc, [qvm, address, tracer] {
-        LOGI("[vm] run once on custom stack\n");
+        LOGI("[vm] run again on custom stack\n");
         uint64_t start = address;
         qvm->run(start, tracer->trace_end);
     });
@@ -56,8 +56,8 @@ static void on_enter(GumInvocationContext *context, gpointer user_data) {
     // memcpy(&g_cpu_context,context->cpu_context,sizeof(GumCpuContext));
     void *address = context->function;
     gum_interceptor_detach(data->interceptor, data->listener);
-    QBDI::setLogPriority(QBDI::DEBUG);
-    QBDI::setLogFile("log.asm", true);
+//    QBDI::setLogPriority(QBDI::DEBUG);
+//    QBDI::setLogFile( "log.asm", true);
 
     std::shared_ptr<QBDI::VM> qvm = init(address, tracer);
     tracer->qvm = qvm;
@@ -81,8 +81,7 @@ static void on_enter(GumInvocationContext *context, gpointer user_data) {
     // state->gs=get_gs_base();
 
     auto stack = std::make_unique<RawBufferStack>(1 << 24);  // 16 Mi
-    const std::shared_ptr<BorrowedStackAllocator> alloc(
-        new BorrowedStackAllocator{stack.get()});
+    const std::shared_ptr<BorrowedStackAllocator> alloc(new BorrowedStackAllocator{stack.get()});
     tracer->alloc = alloc;
     // 3. 在自定义栈上运行
     //    run_on_stack 接收引用，所以使用 *alloc 解引用智能指针
@@ -165,7 +164,7 @@ C_EXPORT bool remove_range(uint64_t start, const uint64_t size) {
     return false;
 }
 
-C_EXPORT void set_escape(uint64_t start, uint64_t end) {
+C_EXPORT void add_escape(uint64_t start, uint64_t end) {
     if (cur_tracer) {
         cur_tracer->escape_execute.emplace_back(start, end);
     }
@@ -182,6 +181,25 @@ C_EXPORT bool set_log_path(const char *path) {
     const auto log_path = std::string(path);
     if (cur_tracer) {
         cur_tracer->SetOutputPath(&log_path);
+        return true;
+    }
+    return false;
+}
+
+C_EXPORT bool set_taint_str(const char *str) {
+    g_taint_str = new char[strlen(str) + 1];
+    strcpy(g_taint_str, str);
+    if (cur_tracer){
+        cur_tracer->SetTaintStr(g_taint_str);
+        return true;
+    }
+    return false;
+}
+
+
+C_EXPORT bool set_printable_size(int size) {
+    if (cur_tracer) {
+        cur_tracer->printable_size = size;
         return true;
     }
     return false;

@@ -38,6 +38,19 @@ int GetSameStrLen(const char *str1, const char *str2) {
     return count;
 }
 
+int IsPrintable(unsigned char *str,int max) {
+    if (str == NULL) return 0;
+    int i = 0;
+    for (i = 0; str[i] != '\0'&& i < max; i++) {
+        unsigned char c = str[i];
+        // ASCII 可打印字符范围：32-126（空格到波浪线）
+        if (c < 32 || c > 126) {
+            return 0;
+        }
+    }
+    return i == max;
+}
+
 #define PRINT_REG(reg) LOGI(#reg "_F:%llx,", cpu->reg)
 #define PRINT_QBDI_REG(reg) LOGI(#reg "_Q:%llx,", state->reg)
 #if defined(__x86_64__) || defined(_M_X64)
