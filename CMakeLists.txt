@@ -40,10 +40,23 @@ if(ANDROID OR CMAKE_SYSTEM_NAME STREQUAL "Android")
     message(STATUS "Android API level: ${ANDROID_PLATFORM}")
 endif()
 
+
+include_directories(
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/${QBDI_PLATFORM}/frida
+        ${CMAKE_CURRENT_SOURCE_DIR}/boost-1.90.0/libs/context/include
+
+        #        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/${QBDI_PLATFORM}
+)
 set(Boost_USE_STATIC_LIBS ON) # 使用静态库
-set(BOOST_INCLUDE_LIBRARIES context)
+set(BOOST_INCLUDE_LIBRARIES context multiprecision)
 add_subdirectory(boost-1.90.0)
 
+
+set(Z3_INTERFACE OFF)
+set(BOOST_INTERFACE OFF)
+
+add_subdirectory(Triton)
 
 
 if(QBDI_PLATFORM STREQUAL "windows")
@@ -80,11 +93,7 @@ add_subdirectory(qbdi-src)
 
 set(HOME ${PROJECT_SOURCE_DIR})
 include_directories(
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/
-        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/${QBDI_PLATFORM}/frida
-        ${CMAKE_CURRENT_SOURCE_DIR}/boost-1.90.0/libs/context/include
-
-        #        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/${QBDI_PLATFORM}
+        ${CMAKE_CURRENT_SOURCE_DIR}/Triton/src/libtriton/includes
 )
 
 FILE(GLOB_RECURSE FILE_SOURCES
@@ -131,12 +140,14 @@ target_link_libraries(${TARGET_NAME}_static
         frida-gum
         QBDI_static
         Boost::context
+        triton
 )
 
 target_link_libraries(${TARGET_NAME}
         frida-gum
         QBDI_static
         Boost::context
+        triton
 )
 
 add_executable(${TARGET_NAME}_test

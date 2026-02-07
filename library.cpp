@@ -171,7 +171,12 @@ C_EXPORT void add_escape(uint64_t start, uint64_t end) {
 }
 C_EXPORT bool add_taint_range(const uint64_t addr, const uint64_t size) {
     if (cur_tracer) {
+        LOGI("add taint mem: %llx size:%llx", addr, size);
         cur_tracer->AddTaintMemory(addr, size);
+        for (uint64_t i = addr;i<addr+size;i++) {
+          cur_tracer->triton.ctx.taintMemory(i);
+        }
+
         return true;
     }
     return false;

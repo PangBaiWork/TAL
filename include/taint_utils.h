@@ -38,7 +38,7 @@ class Instruction {
 
 public:
     cs_insn *inst=nullptr;
-    Instruction(cs_arch arch = CS_ARCH_X86, cs_mode md = CS_MODE_64);
+    Instruction();
 
     ~Instruction();
 

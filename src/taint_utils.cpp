@@ -5,11 +5,19 @@
 #include "taint_utils.h"
 
 
-Instruction::Instruction(cs_arch arch, cs_mode md)
-        : arch(arch), mode(md) {
+Instruction::Instruction(){
+
+#if defined(__x86_64__) || defined(_M_X64)
+    cs_arch_register_x86();
+    cs_arch arch = CS_ARCH_X86; cs_mode md = CS_MODE_64;
+#elif defined(__aarch64__)
+    cs_arch_register_arm64();
+    cs_arch arch = CS_ARCH_ARM64; cs_mode md = CS_MODE_ARM;
+#endif
+
     if (cs_open(arch, md, &handle) != CS_ERR_OK) {
-        return;
-        // throw std::runtime_error("Failed to initialize Capstone");
+        // return;
+        throw std::runtime_error("Failed to initialize Capstone");
     }
 }
 

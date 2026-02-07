@@ -13,6 +13,7 @@
 
 #include "QBDI.h"
 #include "QBDI/State.h"
+#include "TritonTaint.h"
 #include "taint_utils.h"
 #include "utils.h"
 #define STR_ALIGN 40
@@ -66,6 +67,7 @@ class TaintTrace {
     std::shared_ptr<QBDI::VM> qvm;
     bool trace_all = false;
     uint64_t trace_end = 0;
+    TritonTaint triton;
     TaintMemory memory;
     std::vector<MemoryRange> escape_execute;
     std::vector<MemoryRange> avoid_range;

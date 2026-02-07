@@ -104,7 +104,9 @@ QBDI::VMAction TaintTrace::InstTrace(const QBDI::VM *vm,
 
     if (!inst) return QBDI::CONTINUE;
     uint64_t offset = inst->address - base;
-
+    triton.UpdateRegister(gpr,fpr);
+    triton.Procces(inst->address, inst->instSize);
+    // triton.
     // analyse operands
     for(int idx = 0;idx < inst->numOperands;idx++){
         QBDI::OperandAnalysis &operand =  inst->operands[idx];
