@@ -95,7 +95,7 @@ void TaintTrace::PrintMemoryOp(QBDI::GPRState* gpr,uint64_t offset,QBDI::MemoryA
 
 QBDI::VMAction TaintTrace::InstTrace(const QBDI::VM *vm,
                                      const QBDI::GPRState *gpr, QBDI::FPRState *fpr) {
-    anal.reset();
+
 
     const QBDI::InstAnalysis *inst = vm->getInstAnalysis(
             QBDI::ANALYSIS_INSTRUCTION | QBDI::ANALYSIS_SYMBOL |
@@ -104,10 +104,11 @@ QBDI::VMAction TaintTrace::InstTrace(const QBDI::VM *vm,
 
     if (!inst) return QBDI::CONTINUE;
     uint64_t offset = inst->address - base;
-    triton.UpdateRegister(gpr,fpr);
-    triton.Procces(inst->address, inst->instSize);
+//    triton.UpdateRegister(gpr,fpr);
+//    triton.Procces(inst->address, inst->instSize);
     // triton.
     // analyse operands
+    anal.reset();
     for(int idx = 0;idx < inst->numOperands;idx++){
         QBDI::OperandAnalysis &operand =  inst->operands[idx];
         switch (operand.regAccess) {
@@ -171,14 +172,15 @@ QBDI::VMAction TaintTrace::InstTrace(const QBDI::VM *vm,
             }
         } else if (!IsValid(Tr_idx) && IsValid(Tw_idx)){
             while (IsValid(Tw_idx))
-                state.ClearReg(anal.Tw[Tw_idx--]);
+                ClearTaintReg(anal.Tw[Tw_idx--]);
+
             return QBDI::CONTINUE;
         }
     } else {
 //        if (!IsValid(anal.Trw_idx)){
             if (IsValid(Trw_idx)&& IsValid(Crw_idx)){
                 // XCHG REG,*REG
-                state.ClearReg(anal.Trw[0]);
+                ClearTaintReg(anal.Trw[0]);
                 SetTaintReg(anal.Crw[0],0);
             } else if (!IsValid(Trw_idx)&&IsValid(Crw_idx)){
                 /*
@@ -265,6 +267,8 @@ void TaintTrace::MemoryTrace(const QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRS
                     if(IsPrintable((unsigned char*)access.accessAddress,printable_size)){
                         all_log << "PrintableRead:[" << (char*) access.accessAddress << "]" << ENTER;
                         return;
+                    } else {
+                        all_log << "MemoryRead:" << PRINT_ADDR(access.accessAddress) << PRINT_SIZE(access.size) << ENTER;
                     }
                 }
                 CheckTaintedStr(access.accessAddress);
@@ -275,6 +279,8 @@ void TaintTrace::MemoryTrace(const QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRS
                     if(IsPrintable((unsigned char*)access.accessAddress,printable_size)){
                         all_log << "PrintableWrite:[" << (char*) access.accessAddress << "]" << ENTER;
                         return;
+                    } else {
+                        all_log << "MemoryWrite:" << PRINT_ADDR(access.accessAddress) << PRINT_SIZE(access.size) << ENTER;
                     }
                 }
                 break;
@@ -283,6 +289,8 @@ void TaintTrace::MemoryTrace(const QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRS
                     if(IsPrintable((unsigned char*)access.accessAddress,printable_size)){
                         all_log << "PrintableRead:[" << (char*) access.accessAddress << "]"  << ENTER;
                         return;
+                    } else {
+                        all_log << "MemoryReadWrite:" << PRINT_ADDR(access.accessAddress) << PRINT_SIZE(access.size) << ENTER;
                     }
                 }
                 flag |= QBDI::MEMORY_READ_WRITE;
@@ -291,6 +299,7 @@ void TaintTrace::MemoryTrace(const QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRS
         }
         access_p = &access;
     }
+
     if (!access_p||IsTraceMode())return;
 
 
@@ -383,7 +392,7 @@ void TaintTrace::MemoryTrace(const QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRS
                         // ldp *x1, *x2, [reg]
                         // MOV *RAX, [MEM]
                         while (IsValid(taint_w_idx))
-                          state.ClearReg(taint_w[taint_w_idx--]);
+                            ClearTaintReg(taint_w[taint_w_idx--]);
                     } else if (IsValid(taint_r_idx)){
                         if (IsValid(clear_w_idx)) {
                             // MOV RAX,[*RDX]
@@ -407,12 +416,12 @@ void TaintTrace::MemoryTrace(const QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRS
                 while (IsValid(taint_r_idx)&&taint_r[taint_r_idx])
                     PrintMemoryOp(gpr, offset, &access, -1, taint_r[taint_r_idx--]);
                 // question: is stp case access.size = 16 ?
-                const bool result = memory.InsertBySize(access.accessAddress, access.size);
+                AddTaintMemory(access.accessAddress, access.size);
                 if (IsDebugMode())
                 {
                     log <<  "[--> add " << ToHex(offset) +
                         " range:" << ToHex(access.accessAddress) +
-                        "->"+ ToHex(access.accessAddress+access.size)+ "] "<< result << ENTER;
+                        "->"+ ToHex(access.accessAddress+access.size)+ "] " << ENTER;
                 }
             } else {
                 if (IsDebugMode()) {
@@ -444,7 +453,7 @@ void TaintTrace::MemoryTrace(const QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRS
                   <<  PRINT_GPR(clear_r[0]) << ENTER;
             } else if (!range && IsValid(taint_r_idx)) {
               // XOR [MEM], *REG
-              memory.InsertBySize(access.accessAddress, access.size);
+              AddTaintMemory(access.accessAddress, access.size);
             }
             std::ostringstream log_str2;
             if (IsAddrMode()||IsDebugMode()) log_str2 << PRINT_OFFSET(offset);

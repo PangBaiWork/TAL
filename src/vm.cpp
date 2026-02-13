@@ -82,8 +82,9 @@ std::shared_ptr<VM> init(void *address,TaintTrace *tracer) {
     auto *data = new extends(tracer);
     qvm->addCodeCB(PREINST, preInstruction, data);
     qvm->addCodeCB(POSTINST, postInstruction, data,10);
-    qvm->addMemAccessCB(MEMORY_READ_WRITE,memWRAccess,data,-10);
-
+    if (tracer->mode != TRITON_MODE) {
+        qvm->addMemAccessCB(MEMORY_READ_WRITE,memWRAccess,data,-10);
+    }
 
     if (tracer->trace_all){
         qvm->instrumentAllExecutableMaps();
@@ -183,6 +184,11 @@ void removeConflictModule(VM& vm) {
     if ((modules[i].permission & QBDI_PF_EXEC) &&
         (strstr(modules[i].name, "libart.so")       ||
          strstr(modules[i].name, "libEGL.so")       ||
+         strstr(modules[i].name, "linker")       ||
+         strstr(modules[i].name, "libart-compiler.so") ||
+         strstr(modules[i].name, "libnativehelper.so") ||
+         strstr(modules[i].name, "libandroid_runtime.so") ||
+         strstr(modules[i].name, "libbinder.so") ||
          strstr(modules[i].name, "libc++.so")        ||
          strstr(modules[i].name, "libc.so")        ||
          strstr(modules[i].name, "liblog.so")        ||

@@ -1,7 +1,9 @@
 
+
 #include "library.h"
 
 #include "QBDI.h"
+#include "TritonTaint.h"
 #include "fs_gs.h"
 #include "hook_utils.h"
 #include "utils.h"
@@ -10,7 +12,6 @@
 template <class F>
 void run_on_stack(BorrowedStackAllocator &alloc, F &&fn) {
     std::exception_ptr ep;
-
     // callcc 会：创建上下文 + 切到新栈 + 执行 lambda
     // lambda 返回 sink 后：立刻切回调用者（main）并从 callcc 返回
     (void)ctx::callcc(
@@ -50,7 +51,9 @@ char *g_taint_str = nullptr;
 static void on_enter(GumInvocationContext *context, gpointer user_data) {
     // context->function
     print_frida_reg(context->cpu_context);
+    int tid = gum_process_get_current_thread_id();
     LOGI("begin");
+    LOGI("thread id:%lu",tid);
     auto data = static_cast<CallbackData *>(user_data);
     TaintTrace *tracer = data->tracer;
     // memcpy(&g_cpu_context,context->cpu_context,sizeof(GumCpuContext));
@@ -70,6 +73,13 @@ static void on_enter(GumInvocationContext *context, gpointer user_data) {
 
 #if defined(__x86_64__) || defined(_M_X64)
     // qvm->setOptions(QBDI::OPT_ENABLE_FS_GS);
+#elif defined(__aarch64__)
+
+    int nice_value = -19;  // 最高优先级
+    if (setpriority(PRIO_PROCESS, tid,nice_value ) != 0) {
+       LOGE("setpriority failed: tid=%d nice=%d err=%d (%s)",
+                            (int)tid, nice_value, errno, strerror(errno));
+    }
 #endif
 
     const auto state = qvm->getGPRState();
@@ -103,11 +113,16 @@ C_EXPORT void trace(const uint64_t addr, const uint64_t end, const bool all,
     GumModule *module = gum_process_find_module_by_address(addr);
     const uint64_t base_addr = gum_module_get_range(module)->base_address;
     LOGI("Base:%llx", base_addr);
+    if (!cur_tracer) {
+        if (mode == TRITON_MODE) {
+            cur_tracer = new TritonTaint(base_addr, static_cast<PrintMode>(mode));
+        } else {
+            cur_tracer = new TaintTrace(base_addr, static_cast<PrintMode>(mode));
+        }
 
-    cur_tracer = new TaintTrace(base_addr, static_cast<PrintMode>(mode));
+    }
     cur_tracer->trace_all = all;
     cur_tracer->trace_end = end;
-
     auto interceptor = gum_interceptor_obtain();
     HookUtils::gum_attach(interceptor, reinterpret_cast<void *>(addr), on_enter,
                           cur_tracer);
@@ -174,7 +189,7 @@ C_EXPORT bool add_taint_range(const uint64_t addr, const uint64_t size) {
         LOGI("add taint mem: %llx size:%llx", addr, size);
         cur_tracer->AddTaintMemory(addr, size);
         for (uint64_t i = addr;i<addr+size;i++) {
-          cur_tracer->triton.ctx.taintMemory(i);
+//          cur_tracer->triton.ctx.taintMemory(i);
         }
 
         return true;

@@ -168,3 +168,10 @@ endif ()
 target_link_libraries(${TARGET_NAME}_test
         ${TARGET_NAME}_static
 )
+add_custom_command(TARGET attd POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_SOURCE_DIR}/${CMAKE_BUILD_TYPE}/${QBDI_PLATFORM}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "$<TARGET_FILE:attd>"
+        "${CMAKE_CURRENT_SOURCE_DIR}/${CMAKE_BUILD_TYPE}/${QBDI_PLATFORM}/$<TARGET_FILE_NAME:attd>"
+        VERBATIM
+        )

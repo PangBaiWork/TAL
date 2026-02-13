@@ -13,10 +13,11 @@
 
 #include "QBDI.h"
 #include "QBDI/State.h"
-#include "TritonTaint.h"
 #include "taint_utils.h"
+
 #include "utils.h"
-#define STR_ALIGN 40
+
+#define STR_ALIGN 42
 #define READABLE_ADDR 0x10000
 
 #define UNKNOWN_CONST 0xdeadbeef
@@ -42,6 +43,7 @@ enum PrintMode {
     ASM_MODE = 1,
     DEBUG_MODE = 2,
     TRACE_MODE = 3,
+    TRITON_MODE = 4,
 
 };
 inline std::unordered_map<PrintMode, std::string> ModeName = {
@@ -49,6 +51,7 @@ inline std::unordered_map<PrintMode, std::string> ModeName = {
     {ASM_MODE, "asm"},
     {DEBUG_MODE, "debug"},
     {TRACE_MODE, "trace"},
+    {TRITON_MODE, "triton"},
 };
 enum RegAccess { WRITE, READ, READ_WRITE };
 
@@ -67,7 +70,7 @@ class TaintTrace {
     std::shared_ptr<QBDI::VM> qvm;
     bool trace_all = false;
     uint64_t trace_end = 0;
-    TritonTaint triton;
+//    TritonTaint triton;
     TaintMemory memory;
     std::vector<MemoryRange> escape_execute;
     std::vector<MemoryRange> avoid_range;
@@ -88,11 +91,11 @@ class TaintTrace {
     RegArray reg_name;
     char *taint_str = nullptr;
 
-    QBDI::VMAction InstTrace(const QBDI::VM *vm, const QBDI::GPRState *gpr,
+    QBDI::VMAction virtual InstTrace(const QBDI::VM *vm, const QBDI::GPRState *gpr,
                              QBDI::FPRState *fpr);
-    void PostInstTrace(QBDI::VM *vm, const QBDI::GPRState *gpr,
+    void virtual PostInstTrace(QBDI::VM *vm, const QBDI::GPRState *gpr,
                        QBDI::FPRState *fpr);
-    void MemoryTrace(const QBDI::VM *vm, QBDI::GPRState *gpr,
+    void virtual MemoryTrace(const QBDI::VM *vm, QBDI::GPRState *gpr,
                      QBDI::FPRState *fpr);
     TaintTrace(uint64_t base, PrintMode mode = ADDR_MODE,
                const std::string *path = nullptr);
@@ -111,7 +114,7 @@ class TaintTrace {
     bool IsDebugMode() const { return mode == DEBUG_MODE; }
     bool IsTraceMode() const { return mode == TRACE_MODE; }
     bool NeedFlush() const { return true; }
-    ~TaintTrace() { log.close(); }
+    virtual ~TaintTrace() { log.close(); }
     void AnalysisInstType(const QBDI::InstAnalysis *inst) {
         if (inst->isCall) {
             inst_type = CALL;
@@ -157,14 +160,20 @@ class TaintTrace {
         state.SetTaintReg(reg, ref);
         return true;
     }
+
+
+    void ClearTaintReg(const int reg) {
+        if (reg < 0) return;
+        state.ClearReg(reg);
+    }
     bool IsTaint(const int reg) {
         if (!IsValid(reg)) return false;
         return state.IsTaintReg(reg);
     }
-    void AddTaintMemory(const uint64_t addr, const uint64_t size) {
+    void virtual AddTaintMemory(const uint64_t addr, const uint64_t size) {
         memory.InsertBySize(addr, size);
     }
-    void AddTaintMemory(const MemoryRange &range) {
+    void virtual AddTaintMemory(const MemoryRange &range) {
         memory.insert(range.min, range.max);
     }
     void SetTaintStr(char *str) {
@@ -183,7 +192,7 @@ class TaintTrace {
                 ptr[2] == taint_str[2] && ptr[3] == taint_str[3]) {
                 const int len = GetSameStrLen(ptr, taint_str);
                 LOGE("Insert Taint Memory: %s %d", ptr, len);
-                memory.InsertBySize(reinterpret_cast<uint64_t>(ptr), len);
+                AddTaintMemory(reinterpret_cast<uint64_t>(ptr), len);
                 return true;
             }
         }
