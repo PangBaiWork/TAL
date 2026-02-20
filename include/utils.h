@@ -77,8 +77,8 @@ public:
     void* stack_base;           // GS:[0x08]
     void* stack_limit;          // GS:[0x10]
     void* deallocation_stack;   // GS:[0x1478]
-    void StackInfo::SaveStack();
-    void StackInfo::RestoreStack();
+    void SaveStack();
+    void RestoreStack();
 };
 
 int IsPrintable(unsigned char *str,int max);

@@ -4,7 +4,7 @@
 
 #include "QBDI.h"
 #include "triton_taint.h"
-#include "fs_gs.h"
+
 #include "hook_utils.h"
 #include "utils.h"
 #include "vm.h"
@@ -53,9 +53,7 @@ TaintTrace *cur_tracer = nullptr;
 char *g_taint_str = nullptr;
 
 static void on_enter(GumInvocationContext *context, gpointer user_data) {
-    // context->function
     print_frida_reg(context->cpu_context);
-
 
     int tid = gum_process_get_current_thread_id();
     LOGI("begin");
@@ -63,13 +61,13 @@ static void on_enter(GumInvocationContext *context, gpointer user_data) {
     auto data = static_cast<CallbackData *>(user_data);
     TaintTrace *tracer = data->tracer;
 
-    // gum_interceptor_ignore_current_thread(data->interceptor);
-
     void *address = context->function;
     gum_interceptor_detach(data->interceptor, data->listener);
     gum_interceptor_unignore_current_thread(data->interceptor);
-//    QBDI::setLogPriority(QBDI::DEBUG);
-//    QBDI::setLogFile( "log.asm", true);
+    if(tracer->IsDebugMode()){
+        QBDI::setLogPriority(QBDI::DEBUG);
+        QBDI::setLogFile( "log.asm", true);
+    }
 
     std::shared_ptr<QBDI::VM> qvm = init(address, tracer);
     tracer->qvm = qvm;
@@ -94,16 +92,9 @@ static void on_enter(GumInvocationContext *context, gpointer user_data) {
 
     const auto state = qvm->getGPRState();
     syn_reg_gum(context->cpu_context, state, true);
-
-    // state->fs=get_fs_selector();
-    // state->gs=get_gs_selector();
-    // state->fs=get_fs_base();
-    // state->gs=get_gs_base();
-
     auto stack = std::make_unique<RawBufferStack>(1 << 24);  // 16 Mi
     const std::shared_ptr<BorrowedStackAllocator> alloc(new BorrowedStackAllocator{stack.get()});
     tracer->alloc = alloc;
-    // uint64_t tls_key = HookUtils::get_latest_tls();
     gum_tls_key_set_value(gum_interceptor_get_key(),NULL);
     run_on_stack(*alloc, [qvm, address,tracer] {
         LOGI("[vm] run once on custom stack\n");
@@ -115,74 +106,6 @@ static void on_enter(GumInvocationContext *context, gpointer user_data) {
 
 }
 
-void* backup;
-HOOK_DEF(QBDI::rword, gum_handle) {
-
-    auto context = gum_interceptor_get_current_invocation();
-    auto data =
-        (CallbackData *)gum_invocation_context_get_replacement_data(context);
-    gum_interceptor_revert(data->interceptor, context->function);
-    gum_interceptor_flush(data->interceptor);
-
-    print_frida_reg(context->cpu_context);
-
-
-    int tid = gum_process_get_current_thread_id();
-    LOGI("begin");
-    LOGI("thread id:%d",tid);
-
-    TaintTrace *tracer = data->tracer;
-
-    // gum_interceptor_ignore_current_thread(data->interceptor);
-
-    void *address = context->function;
-    //    QBDI::setLogPriority(QBDI::DEBUG);
-    //    QBDI::setLogFile( "log.asm", true);
-
-    std::shared_ptr<QBDI::VM> qvm = init(address, tracer);
-    tracer->qvm = qvm;
-    for (const auto &range : tracer->escape_execute) {
-        LOGI("attach: %lx",range.max);
-        HookUtils::gum_replace(reinterpret_cast<void *>(range.max),
-                              escape_on_enter, tracer,&backup);
-    }
-
-#if defined(__x86_64__) || defined(_M_X64)
-    // qvm->setOptions(QBDI::OPT_ENABLE_FS_GS);
-#elif defined(__aarch64__)
-
-    int nice_value = -19;  // 最高优先级
-    if (setpriority(PRIO_PROCESS, tid,nice_value ) != 0) {
-        LOGE("setpriority failed: tid=%d nice=%d err=%d (%s)",
-                             (int)tid, nice_value, errno, strerror(errno));
-    }
-#endif
-
-    const auto state = qvm->getGPRState();
-    syn_reg_gum(context->cpu_context, state, true);
-
-    // state->fs=get_fs_selector();
-    // state->gs=get_gs_selector();
-    // state->fs=get_fs_base();
-    // state->gs=get_gs_base();
-
-    auto stack = std::make_unique<RawBufferStack>(1 << 24);  // 16 Mi
-    const std::shared_ptr<BorrowedStackAllocator> alloc(new BorrowedStackAllocator{stack.get()});
-    tracer->alloc = alloc;
-
-    run_on_stack(*alloc, [qvm, address] {
-        LOGI("[vm] run once on custom stack\n");
-        uint64_t start = reinterpret_cast<uint64_t>(address);
-        qvm->run(start, 0);
-    });
-    // broken stack
-
-
-
-
-    return 0;
-
-}
 
 C_EXPORT void trace(const uint64_t addr, const uint64_t end, const bool all,
                     int mode) {
@@ -206,47 +129,7 @@ C_EXPORT void trace(const uint64_t addr, const uint64_t end, const bool all,
     //                        reinterpret_cast<void **>(&orig_gum_handle));
     LOGI("hooked");
 }
-// 0x7fe668d670 0x7fe668d6a0
-// 0x7fe668d670 0x7fe668d6a0
-C_EXPORT void taint_trace(uint64_t addr, const bool all,
-                          const uint64_t taint_addr, const int taint_size,
-                          int mode) {
-    LOGD("hooking %lx", addr);
-    LOGD("taint: %lx size:%d", taint_addr, taint_size);
-    GumModule *module = gum_process_find_module_by_address(addr);
-    const uint64_t base_addr = gum_module_get_range(module)->base_address;
-    LOGE("Base:%lx", base_addr);
-    const auto taint = new MemoryRange(taint_addr, taint_addr + taint_size);
-    cur_tracer = new TaintTrace(base_addr, static_cast<PrintMode>(mode));
-    cur_tracer->trace_all = all;
-    cur_tracer->trace_end = 0;
-    cur_tracer->AddTaintMemory(*taint);
 
-    HookUtils::gum_attach(reinterpret_cast<void *>(addr), on_enter,
-                          cur_tracer);
-    LOGE("hooked");
-}
-
-C_EXPORT void taint_trace_str(uint64_t addr, bool all, char *taint_str,
-                              int mode) {
-    LOGD("hooking %lx", addr);
-    g_taint_str = new char[strlen(taint_str) + 1];
-    strcpy(g_taint_str, taint_str);
-    GumModule *module = gum_process_find_module_by_address(addr);
-    const uint64_t base_addr = gum_module_get_range(module)->base_address;
-    LOGE("Base:%lx", base_addr);
-
-    cur_tracer = new TaintTrace(base_addr, static_cast<PrintMode>(mode));
-    cur_tracer->trace_all = all;
-    cur_tracer->trace_end = 0;
-    cur_tracer->SetTaintStr(g_taint_str);
-
-    auto interceptor = gum_interceptor_obtain();
-
-    HookUtils::gum_attach(reinterpret_cast<void *>(addr), on_enter,
-                          cur_tracer);
-    LOGE("hooked");
-}
 
 C_EXPORT bool remove_range(uint64_t start, const uint64_t size) {
     if (cur_tracer) {

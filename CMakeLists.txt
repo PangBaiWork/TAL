@@ -74,8 +74,7 @@ if(QBDI_PLATFORM STREQUAL "windows")
 
     cmake_host_system_information(RESULT CPU_NUMBER_OF_LOGICAL_CORES QUERY NUMBER_OF_LOGICAL_CORES)
     add_compile_options($<$<CXX_COMPILER_ID:MSVC>:/MP${CPU_NUMBER_OF_LOGICAL_CORES}>)
-    add_compile_options(/Gs4194304)
-    # 设置默认栈大小为 4MB（默认是 1MB）
+
 
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /Z7")
     set(CMAKE_SHARED_LINKER_FLAGS_DEBUG "${CMAKE_SHARED_LINKER_FLAGS_DEBUG} /DEBUG:FULL")
@@ -110,21 +109,17 @@ message("Variable value: ${FILE_SOURCES}")
 add_library(${TARGET_NAME} SHARED
         ${FILE_SOURCES}
         library.cpp
-#        src/asm/fs_gs_x64_msvc.asm
 )
 #target_compile_options(${TARGET_NAME} PRIVATE -mstackrealign)
 add_library(${TARGET_NAME}_static STATIC
         ${FILE_SOURCES}
         library.cpp
-#        src/asm/fs_gs_x64_msvc.asm
 )
 
 
 
 if(QBDI_PLATFORM STREQUAL "windows")
     add_compile_definitions(_HAS_STD_BYTE=0)
-    target_link_options(${TARGET_NAME} PRIVATE /STACK:4194304)
-    target_link_options(${TARGET_NAME}_static PRIVATE /STACK:4194304)
 endif ()
 
 add_library(frida-gum STATIC IMPORTED)
@@ -133,10 +128,6 @@ set_target_properties(frida-gum PROPERTIES IMPORTED_LOCATION
 
 
 
-if(NOT QBDI_PLATFORM STREQUAL "windows")
-    set(CMAKE_BUILD_TYPE Debug)
-endif ()
-set(CMAKE_BUILD_TYPE Debug)
 
 
 target_link_options(${TARGET_NAME} PRIVATE -Wl,--exclude-libs=ALL -Wall -Wextra)
@@ -176,6 +167,7 @@ endif ()
 target_link_libraries(${TARGET_NAME}_test
         ${TARGET_NAME}_static
 )
+
 add_custom_command(TARGET attd POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_SOURCE_DIR}/${CMAKE_BUILD_TYPE}/${QBDI_PLATFORM}"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different

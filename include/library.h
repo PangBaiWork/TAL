@@ -36,10 +36,7 @@
 #define LOGE(fmt, ...) fprintf(stderr, "[TTD ERROR] " fmt "\n", ##__VA_ARGS__)
 #endif
 
-C_EXPORT void taint_trace(uint64_t addr, bool all,
-                                    uint64_t taint_addr, int taint_size,
-                                    int mode);
-C_EXPORT void taint_trace_str(uint64_t addr,bool all,char *taint_str,int mode);
+
 
 C_EXPORT void trace(uint64_t addr, uint64_t end, bool all,
                     int mode) ;
