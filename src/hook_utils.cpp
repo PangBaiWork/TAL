@@ -15,11 +15,14 @@ using namespace std;
 
 
 
-void HookUtils::gum_replace(void* addr, void* replace, void** backup){
+void HookUtils::gum_replace(void* addr, void* replace, TaintTrace* tracer, void** backup){
     GumInterceptor *interceptor;
     interceptor = gum_interceptor_obtain();
     gum_interceptor_begin_transaction(interceptor);
-    auto ret =gum_interceptor_replace(interceptor,addr,replace, interceptor,backup);
+    auto data = new CallbackData();
+    data->tracer = tracer;
+    data->interceptor = interceptor;
+    auto ret = gum_interceptor_replace(interceptor,addr,replace, data,backup);
     gum_interceptor_end_transaction(interceptor);
     gum_interceptor_flush(interceptor);
     LOGI("HOOK REPLACE: %d",ret);
@@ -27,8 +30,8 @@ void HookUtils::gum_replace(void* addr, void* replace, void** backup){
 
 
 // GumInvocationListener *listener=nullptr;
-GumInvocationListener *HookUtils::gum_attach(GumInterceptor *interceptor,void* addr, GumInvocationCallback on_enter, TaintTrace* tracer){
-
+GumInvocationListener *HookUtils::gum_attach(void* addr, GumInvocationCallback on_enter, TaintTrace* tracer){
+    auto interceptor = gum_interceptor_obtain();
     gum_interceptor_begin_transaction(interceptor);
     if (on_enter == nullptr) on_enter = empty_on_enter;
     auto data = new CallbackData();
@@ -37,11 +40,57 @@ GumInvocationListener *HookUtils::gum_attach(GumInterceptor *interceptor,void* a
     auto listener = gum_make_call_listener(on_enter,empty_on_leave, data, nullptr);
     data->listener = listener;
     data->interceptor = interceptor;
-    gum_interceptor_attach(interceptor,addr,listener, nullptr,GUM_ATTACH_FLAGS_NONE);
+
+    gum_interceptor_attach(interceptor,addr,listener, nullptr,GUM_ATTACH_FLAGS_UNIGNORABLE);
     gum_interceptor_end_transaction(interceptor);
     return listener;
 }
 
+uint64_t latest_tls;
+// void* ;
+void (*orig_tls_set_value_fun)(uint64_t, uint64_t);
+void tls_on_enter(GumInvocationContext * context, gpointer user_data) {
+// #if defined(__x86_64__)
+//     latest_tls = context->cpu_context->rdi;
+// #elif  defined(_M_X64)
+//     latest_tls = context->cpu_context->rcx;
+// #elif defined(__aarch64__)
+//     latest_tls = context->cpu_context->x0;
+// #endif
+    latest_tls =(uint64_t) gum_invocation_context_get_return_value(context);
+}
+
+void tls_on_replace() {
+//     auto context = gum_interceptor_get_current_invocation();
+//     uint64_t arg2;
+// #if defined(__x86_64__)
+//     latest_tls = context->cpu_context->rdi;
+//     arg2 = context->cpu_context->rsi;
+// #elif  defined(_M_X64)
+//     latest_tls = context->cpu_context->rcx;
+//     arg2 = context->cpu_context->rdx;
+// #elif defined(__aarch64__)
+//     latest_tls = context->cpu_context->x0;
+//     arg2 = context->cpu_context->x1;
+// #endif
+//     orig_tls_set_value_fun(latest_tls,arg2);
+
+}
+
+uint64_t HookUtils::get_latest_tls() {
+    return latest_tls;
+}
+void HookUtils::set_tls_hook(){
+    auto interceptor = gum_interceptor_obtain();
+    gum_interceptor_begin_transaction(interceptor);
+    auto listener = gum_make_call_listener(empty_on_enter,tls_on_enter, interceptor, nullptr);
+
+    // gum_interceptor_attach(interceptor,gum_tls_key_new,listener,nullptr,GUM_ATTACH_FLAGS_NONE);
+    gum_interceptor_replace(interceptor,gum_tls_key_set_value,tls_on_replace, interceptor,(gpointer *) &orig_tls_set_value_fun);
+    // gum_stac
+    gum_interceptor_end_transaction(interceptor);
+    gum_interceptor_flush(interceptor);
+}
 
 
 

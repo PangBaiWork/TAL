@@ -63,6 +63,7 @@ struct BorrowedStackAllocator {
         std::uintptr_t base = reinterpret_cast<std::uintptr_t>(backing->buf.get());
         std::uintptr_t top  = base + backing->size;
         top &= ~std::uintptr_t(0xF);          // 16-byte 对齐（很重要）
+        LOGI("alloc stack: base=%p top=%p size=%zu", (void*)base, (void*)top, backing->size);
         sctx.size = backing->size;
         sctx.sp   = reinterpret_cast<void*>(top); // 栈顶（高地址）
         return sctx;
@@ -71,6 +72,14 @@ struct BorrowedStackAllocator {
     void deallocate(ctx::stack_context&) noexcept {}
 };
 
+class  StackInfo {
+public:
+    void* stack_base;           // GS:[0x08]
+    void* stack_limit;          // GS:[0x10]
+    void* deallocation_stack;   // GS:[0x1478]
+    void StackInfo::SaveStack();
+    void StackInfo::RestoreStack();
+};
 
 int IsPrintable(unsigned char *str,int max);
 #endif //UTILS_H

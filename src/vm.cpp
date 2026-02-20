@@ -76,12 +76,37 @@ VMAction memWRAccess(VM *vm, GPRState *gprState, FPRState *fprState, void *data)
     return CONTINUE;
 }
 
+static QBDI::VMAction transferCall(QBDI::VMInstanceRef vm,
+                                  const QBDI::VMState *state,
+                                  QBDI::GPRState *gprState,
+                                  QBDI::FPRState *fprState, void *data) {
+    auto extend_data = (extends *) data;
+    if (extend_data->enableTaint()) {
+        extend_data->taintTrace->guest_stack.RestoreStack();
+    }
+    return QBDI::VMAction::CONTINUE;
+}
+
+static QBDI::VMAction transferRet(QBDI::VMInstanceRef vm,
+                                  const QBDI::VMState *state,
+                                  QBDI::GPRState *gprState,
+                                  QBDI::FPRState *fprState, void *data) {
+    auto extend_data = (extends *) data;
+    if (extend_data->enableTaint()) {
+        extend_data->taintTrace->host_stack.RestoreStack();
+    }
+
+    return QBDI::VMAction::CONTINUE;
+}
+
 
 std::shared_ptr<VM> init(void *address,TaintTrace *tracer) {
     auto qvm = std::make_unique<VM>();
     auto *data = new extends(tracer);
     qvm->addCodeCB(PREINST, preInstruction, data);
     qvm->addCodeCB(POSTINST, postInstruction, data,10);
+    qvm->addVMEventCB(EXEC_TRANSFER_CALL, transferCall, data);
+    qvm->addVMEventCB(EXEC_TRANSFER_RETURN, transferRet, data);
     if (tracer->mode != TRITON_MODE) {
         qvm->addMemAccessCB(MEMORY_READ_WRITE,memWRAccess,data,-10);
     }
@@ -97,11 +122,7 @@ std::shared_ptr<VM> init(void *address,TaintTrace *tracer) {
 
 
      removeConflictModule(*qvm);
-    for (const MemoryRange & range : tracer->escape_execute) {
-        // todo asm size 4 is not always correct
-        LOGI("remove %llx",range.min);
-        qvm->removeInstrumentedRange(range.min,range.min+4);
-    }
+
 
     return qvm;
 }

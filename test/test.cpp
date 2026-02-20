@@ -95,6 +95,7 @@ void memcpy_test() {
 #include <time.h>
 uint64_t time_test() {
   time_t  now = time(NULL);
+    now+=0xdeadbeef;
   return now;
 }
 
@@ -149,7 +150,7 @@ void btea(uint32_t * v, int n, uint32_t const key[4]) {
 
   free_test();
 
-  time_test();
+  // time_test();
   void (*funcPtr)();
   funcPtr=reg_jmp_test;
 
@@ -167,7 +168,7 @@ void btea(uint32_t * v, int n, uint32_t const key[4]) {
 int main()
 {
 #ifdef _MSC_VER
-    gum_init_embedded();
+    init_main();
 #endif
     setvbuf(stdout, NULL, _IONBF, 0);
     setvbuf(stderr, NULL, _IONBF, 0);
@@ -182,13 +183,17 @@ int main()
     // taint_trace((void*)&btea,1,(uint64_t)flag,16,2);
     // setbuf(stdout, NULL);
     // taint_trace_str((uint64_t)&btea,1,(char*)flag,TRACE_MODE);
-    trace((uint64_t)&btea,0,1,TRITON_MODE);
+    trace((uint64_t)&btea,(uint64_t)0,1,TRACE_MODE);
     add_taint_range((uint64_t)flag,16);
-    remove_range((uint64_t)memcpy_test,4);
+    // set_triton(1);
+    // remove_range((uint64_t)memcpy_test,4);
     // remove_range((uint64_t)fprintf,4);
-    // set_escape((uint64_t)memcpy_test,(uint64_t)memcpy_test+0x5a);
+    add_escape((uint64_t)memcpy_test,(uint64_t)time_test);
     LOGD("test begin");
     btea((uint32_t*)flag,4,(uint32_t*)key);
+    free_test();
+    memcpy_test();
+    time_test();
     LOGD("test finish");
     return  114514;
 

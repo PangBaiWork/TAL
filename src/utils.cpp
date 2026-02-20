@@ -39,7 +39,7 @@ int GetSameStrLen(const char *str1, const char *str2) {
 }
 
 int IsPrintable(unsigned char *str,int max) {
-    if (str == NULL) return 0;
+    // if (str == NULL||str <=(unsigned char*) 0x3000) return 0;
     int i = 0;
     for (i = 0; str[i] != '\0'&& i < max; i++) {
         unsigned char c = str[i];
@@ -50,6 +50,35 @@ int IsPrintable(unsigned char *str,int max) {
     }
     return i == max;
 }
+
+#if defined(_M_X64)
+#define NOMINMAX
+#include <windows.h>
+#include <cstdint>
+void StackInfo::SaveStack(){
+    NT_TIB* tib = (NT_TIB*)NtCurrentTeb();
+    stack_base = tib->StackBase;
+    stack_limit = tib->StackLimit;
+
+    // DeallocationStack 在 TEB 偏移 0x1478 (x64)
+    auto teb = (uint8_t*)NtCurrentTeb();
+    deallocation_stack = *(void**)(teb + 0x1478);
+}
+
+void StackInfo::RestoreStack(){
+    NT_TIB* tib = (NT_TIB*)NtCurrentTeb();
+    tib->StackBase = stack_base;
+    tib->StackLimit = stack_limit;
+
+    auto teb = (uint8_t*)NtCurrentTeb();
+    *(void**)(teb + 0x1478) = deallocation_stack;
+}
+#else
+void StackInfo::SaveStack(){};
+void StackInfo::RestoreStack(){};
+#endif
+
+
 
 #define PRINT_REG(reg) LOGI(#reg "_F:%llx,", cpu->reg)
 #define PRINT_QBDI_REG(reg) LOGI(#reg "_Q:%llx,", state->reg)

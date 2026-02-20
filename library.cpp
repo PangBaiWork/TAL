@@ -1,13 +1,15 @@
 
-
+#pragma check_stack(off)
 #include "library.h"
 
 #include "QBDI.h"
-#include "TritonTaint.h"
+#include "triton_taint.h"
 #include "fs_gs.h"
 #include "hook_utils.h"
 #include "utils.h"
 #include "vm.h"
+
+extern "C" GumTlsKey gum_interceptor_get_key();
 
 template <class F>
 void run_on_stack(BorrowedStackAllocator &alloc, F &&fn) {
@@ -33,13 +35,15 @@ void escape_on_enter(GumInvocationContext *context, gpointer user_data) {
     auto data = static_cast<CallbackData *>(user_data);
     TaintTrace *tracer = data->tracer;
     std::shared_ptr<QBDI::VM> qvm = tracer->qvm;
+    tracer->guest_stack.SaveStack();
     gum_interceptor_detach(data->interceptor, data->listener);
     uint64_t address = reinterpret_cast<uint64_t>(context->function);
-
-    run_on_stack(*tracer->alloc, [qvm, address, tracer] {
+    gum_tls_key_set_value(gum_interceptor_get_key(),NULL);
+    run_on_stack(*tracer->alloc, [qvm, address,tracer] {
         LOGI("[vm] run again on custom stack\n");
+        tracer->host_stack.SaveStack();
         uint64_t start = address;
-        qvm->run(start, tracer->trace_end);
+        qvm->run(start, 0);
     });
 }
 
@@ -51,25 +55,31 @@ char *g_taint_str = nullptr;
 static void on_enter(GumInvocationContext *context, gpointer user_data) {
     // context->function
     print_frida_reg(context->cpu_context);
+
+
     int tid = gum_process_get_current_thread_id();
     LOGI("begin");
-    LOGI("thread id:%lu",tid);
+    LOGI("thread id:%d",tid);
     auto data = static_cast<CallbackData *>(user_data);
     TaintTrace *tracer = data->tracer;
-    // memcpy(&g_cpu_context,context->cpu_context,sizeof(GumCpuContext));
+
+    // gum_interceptor_ignore_current_thread(data->interceptor);
+
     void *address = context->function;
     gum_interceptor_detach(data->interceptor, data->listener);
+    gum_interceptor_unignore_current_thread(data->interceptor);
 //    QBDI::setLogPriority(QBDI::DEBUG);
 //    QBDI::setLogFile( "log.asm", true);
 
     std::shared_ptr<QBDI::VM> qvm = init(address, tracer);
     tracer->qvm = qvm;
+    tracer->guest_stack.SaveStack();
     for (const auto &range : tracer->escape_execute) {
-        LOGI("attach: %llx",range.max);
-        HookUtils::gum_attach(data->interceptor,
-                              reinterpret_cast<void *>(range.max),
+        LOGI("attach: %lx",range.max);
+        HookUtils::gum_attach(reinterpret_cast<void *>(range.max),
                               escape_on_enter, tracer);
     }
+
 
 #if defined(__x86_64__) || defined(_M_X64)
     // qvm->setOptions(QBDI::OPT_ENABLE_FS_GS);
@@ -93,26 +103,93 @@ static void on_enter(GumInvocationContext *context, gpointer user_data) {
     auto stack = std::make_unique<RawBufferStack>(1 << 24);  // 16 Mi
     const std::shared_ptr<BorrowedStackAllocator> alloc(new BorrowedStackAllocator{stack.get()});
     tracer->alloc = alloc;
-    // 3. 在自定义栈上运行
-    //    run_on_stack 接收引用，所以使用 *alloc 解引用智能指针
-    run_on_stack(*alloc, [qvm, address, tracer] {
+    // uint64_t tls_key = HookUtils::get_latest_tls();
+    gum_tls_key_set_value(gum_interceptor_get_key(),NULL);
+    run_on_stack(*alloc, [qvm, address,tracer] {
+        LOGI("[vm] run once on custom stack\n");
+        tracer->host_stack.SaveStack();
+        uint64_t start = reinterpret_cast<uint64_t>(address);
+        qvm->run(start, 0);
+    });
+    // broken stack
+
+}
+
+void* backup;
+HOOK_DEF(QBDI::rword, gum_handle) {
+
+    auto context = gum_interceptor_get_current_invocation();
+    auto data =
+        (CallbackData *)gum_invocation_context_get_replacement_data(context);
+    gum_interceptor_revert(data->interceptor, context->function);
+    gum_interceptor_flush(data->interceptor);
+
+    print_frida_reg(context->cpu_context);
+
+
+    int tid = gum_process_get_current_thread_id();
+    LOGI("begin");
+    LOGI("thread id:%d",tid);
+
+    TaintTrace *tracer = data->tracer;
+
+    // gum_interceptor_ignore_current_thread(data->interceptor);
+
+    void *address = context->function;
+    //    QBDI::setLogPriority(QBDI::DEBUG);
+    //    QBDI::setLogFile( "log.asm", true);
+
+    std::shared_ptr<QBDI::VM> qvm = init(address, tracer);
+    tracer->qvm = qvm;
+    for (const auto &range : tracer->escape_execute) {
+        LOGI("attach: %lx",range.max);
+        HookUtils::gum_replace(reinterpret_cast<void *>(range.max),
+                              escape_on_enter, tracer,&backup);
+    }
+
+#if defined(__x86_64__) || defined(_M_X64)
+    // qvm->setOptions(QBDI::OPT_ENABLE_FS_GS);
+#elif defined(__aarch64__)
+
+    int nice_value = -19;  // 最高优先级
+    if (setpriority(PRIO_PROCESS, tid,nice_value ) != 0) {
+        LOGE("setpriority failed: tid=%d nice=%d err=%d (%s)",
+                             (int)tid, nice_value, errno, strerror(errno));
+    }
+#endif
+
+    const auto state = qvm->getGPRState();
+    syn_reg_gum(context->cpu_context, state, true);
+
+    // state->fs=get_fs_selector();
+    // state->gs=get_gs_selector();
+    // state->fs=get_fs_base();
+    // state->gs=get_gs_base();
+
+    auto stack = std::make_unique<RawBufferStack>(1 << 24);  // 16 Mi
+    const std::shared_ptr<BorrowedStackAllocator> alloc(new BorrowedStackAllocator{stack.get()});
+    tracer->alloc = alloc;
+
+    run_on_stack(*alloc, [qvm, address] {
         LOGI("[vm] run once on custom stack\n");
         uint64_t start = reinterpret_cast<uint64_t>(address);
-        qvm->run(start, tracer->trace_end);
+        qvm->run(start, 0);
     });
+    // broken stack
 
-    // syn_reg_gum(context->cpu_context, state, false);
-    // const clock_t end = clock();
-    // LOGI("time: %d", (end - start) / CLOCKS_PER_SEC);
-    LOGI("end");
+
+
+
+    return 0;
+
 }
 
 C_EXPORT void trace(const uint64_t addr, const uint64_t end, const bool all,
                     int mode) {
-    LOGI("hooking %llx", addr);
+    LOGI("hooking %lx", addr);
     GumModule *module = gum_process_find_module_by_address(addr);
     const uint64_t base_addr = gum_module_get_range(module)->base_address;
-    LOGI("Base:%llx", base_addr);
+    LOGI("Base:%lx", base_addr);
     if (!cur_tracer) {
         if (mode == TRITON_MODE) {
             cur_tracer = new TritonTaint(base_addr, static_cast<PrintMode>(mode));
@@ -123,9 +200,10 @@ C_EXPORT void trace(const uint64_t addr, const uint64_t end, const bool all,
     }
     cur_tracer->trace_all = all;
     cur_tracer->trace_end = end;
-    auto interceptor = gum_interceptor_obtain();
-    HookUtils::gum_attach(interceptor, reinterpret_cast<void *>(addr), on_enter,
+    HookUtils::gum_attach(reinterpret_cast<void *>(addr), on_enter,
                           cur_tracer);
+    // HookUtils::gum_replace(reinterpret_cast<void *>(addr), new_gum_handle,cur_tracer,
+    //                        reinterpret_cast<void **>(&orig_gum_handle));
     LOGI("hooked");
 }
 // 0x7fe668d670 0x7fe668d6a0
@@ -133,31 +211,30 @@ C_EXPORT void trace(const uint64_t addr, const uint64_t end, const bool all,
 C_EXPORT void taint_trace(uint64_t addr, const bool all,
                           const uint64_t taint_addr, const int taint_size,
                           int mode) {
-    LOGD("hooking %llx", addr);
-    LOGD("taint: %llx size:%d", taint_addr, taint_size);
+    LOGD("hooking %lx", addr);
+    LOGD("taint: %lx size:%d", taint_addr, taint_size);
     GumModule *module = gum_process_find_module_by_address(addr);
     const uint64_t base_addr = gum_module_get_range(module)->base_address;
-    LOGE("Base:%llx", base_addr);
+    LOGE("Base:%lx", base_addr);
     const auto taint = new MemoryRange(taint_addr, taint_addr + taint_size);
     cur_tracer = new TaintTrace(base_addr, static_cast<PrintMode>(mode));
     cur_tracer->trace_all = all;
     cur_tracer->trace_end = 0;
     cur_tracer->AddTaintMemory(*taint);
 
-    auto interceptor = gum_interceptor_obtain();
-    HookUtils::gum_attach(interceptor, reinterpret_cast<void *>(addr), on_enter,
+    HookUtils::gum_attach(reinterpret_cast<void *>(addr), on_enter,
                           cur_tracer);
     LOGE("hooked");
 }
 
 C_EXPORT void taint_trace_str(uint64_t addr, bool all, char *taint_str,
                               int mode) {
-    LOGD("hooking %llx", addr);
+    LOGD("hooking %lx", addr);
     g_taint_str = new char[strlen(taint_str) + 1];
     strcpy(g_taint_str, taint_str);
     GumModule *module = gum_process_find_module_by_address(addr);
     const uint64_t base_addr = gum_module_get_range(module)->base_address;
-    LOGE("Base:%llx", base_addr);
+    LOGE("Base:%lx", base_addr);
 
     cur_tracer = new TaintTrace(base_addr, static_cast<PrintMode>(mode));
     cur_tracer->trace_all = all;
@@ -166,7 +243,7 @@ C_EXPORT void taint_trace_str(uint64_t addr, bool all, char *taint_str,
 
     auto interceptor = gum_interceptor_obtain();
 
-    HookUtils::gum_attach(interceptor, reinterpret_cast<void *>(addr), on_enter,
+    HookUtils::gum_attach(reinterpret_cast<void *>(addr), on_enter,
                           cur_tracer);
     LOGE("hooked");
 }
@@ -179,19 +256,15 @@ C_EXPORT bool remove_range(uint64_t start, const uint64_t size) {
     return false;
 }
 
-C_EXPORT void add_escape(uint64_t start, uint64_t end) {
+C_EXPORT void add_escape(uint64_t break_addr, uint64_t return_addr) {
     if (cur_tracer) {
-        cur_tracer->escape_execute.emplace_back(start, end);
+        cur_tracer->escape_execute.emplace_back(break_addr, return_addr);
     }
 }
 C_EXPORT bool add_taint_range(const uint64_t addr, const uint64_t size) {
     if (cur_tracer) {
-        LOGI("add taint mem: %llx size:%llx", addr, size);
+        LOGI("add taint mem: %lx size:%lx", addr, size);
         cur_tracer->AddTaintMemory(addr, size);
-        for (uint64_t i = addr;i<addr+size;i++) {
-//          cur_tracer->triton.ctx.taintMemory(i);
-        }
-
         return true;
     }
     return false;
@@ -225,8 +298,18 @@ C_EXPORT bool set_printable_size(int size) {
     return false;
 }
 
+C_EXPORT bool set_triton(int mode) {
+    if (cur_tracer&&typeid(*cur_tracer)==typeid(TritonTaint)) {
+        const auto triton_tracer = dynamic_cast<TritonTaint*>(cur_tracer);
+        triton_tracer->SetLiftMode(static_cast<TritonTaint::LiftMode>(mode));
+        return true;
+    }
+    return false;
+}
+
 C_INIT void init_main() {
     gum_init_embedded();
+    // HookUtils::set_tls_hook();
     LOGE("load ok");
 }
 

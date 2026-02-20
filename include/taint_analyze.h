@@ -16,6 +16,11 @@
 #include "taint_utils.h"
 
 #include "utils.h"
+// for private var get
+#include "Engine/Engine.h"
+#include "ExecBroker/ExecBroker.h"
+#include "ExecBlock/ExecBlock.h"
+
 
 #define STR_ALIGN 42
 #define READABLE_ADDR 0x10000
@@ -62,11 +67,22 @@ enum InstOprandType {
     IF_JMP,  // for loop jmp
 };
 
+
+#if defined(_M_X64)
+#define NOMINMAX
+#include <windows.h>
+#include <cstdint>
+
+
+#endif
+
 // using namespace std;
 class TaintTrace {
    public:
     int printable_size = 4;
     std::shared_ptr<BorrowedStackAllocator> alloc;
+    StackInfo guest_stack;
+    StackInfo host_stack;
     std::shared_ptr<QBDI::VM> qvm;
     bool trace_all = false;
     uint64_t trace_end = 0;
@@ -91,7 +107,7 @@ class TaintTrace {
     RegArray reg_name;
     char *taint_str = nullptr;
 
-    QBDI::VMAction virtual InstTrace(const QBDI::VM *vm, const QBDI::GPRState *gpr,
+    QBDI::VMAction virtual InstTrace(QBDI::VM *vm, const QBDI::GPRState *gpr,
                              QBDI::FPRState *fpr);
     void virtual PostInstTrace(QBDI::VM *vm, const QBDI::GPRState *gpr,
                        QBDI::FPRState *fpr);
@@ -113,8 +129,20 @@ class TaintTrace {
     bool IsAsmMode() const { return mode == ASM_MODE; }
     bool IsDebugMode() const { return mode == DEBUG_MODE; }
     bool IsTraceMode() const { return mode == TRACE_MODE; }
+    // 保存当前 TIB 栈信息
+
+
     bool NeedFlush() const { return true; }
+
     virtual ~TaintTrace() { log.close(); }
+    bool IsBreakAddr(uint64_t addr) {
+        for (auto range:escape_execute) {
+            if (range.min == addr) {
+                return true;
+            }
+        }
+        return false;
+    }
     void AnalysisInstType(const QBDI::InstAnalysis *inst) {
         if (inst->isCall) {
             inst_type = CALL;

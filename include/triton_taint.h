@@ -7,13 +7,22 @@
 #include "QBDI.h"
 #include "taint_analyze.h"
 #include "triton/context.hpp"
-class TritonTaint : public TaintTrace{
+#include "unordered_map"
+class TritonTaint final : public TaintTrace{
    public:
+    enum LiftMode {
+        NONE = 0,
+        PYTHON = 1,
+        LLVM = 2
+    };
+    LiftMode lift_mode = NONE;
     triton::Context ctx;
     const static  QBDI::GPRState* gpr_state;
     const static  QBDI::FPRState* fpr_state;
-    static int tq_map[100];
-    static int qt_map[100];
+//    static int tq_map[300];
+//    static int qt_map[300];
+    static std::unordered_map<int,int> qt_map;
+    static std::unordered_map<int,int> tq_map;
     TritonTaint(uint64_t base, PrintMode mode = ADDR_MODE,
                const std::string *path = nullptr);
     QBDI::VMAction virtual InstTrace(const QBDI::VM *vm, const QBDI::GPRState *gpr,
@@ -37,6 +46,19 @@ class TritonTaint : public TaintTrace{
         const auto mem = triton::arch::MemoryAccess(addr, size);
         ctx.setTaintMemory(mem,true);
     }
+    static int GetQRegIdx(int id){
+        auto it = qt_map.find(id);
+        int value = (it != qt_map.end()) ? it->second : -1;
+        return value;
+    }
+    void SetLiftMode(const LiftMode mode) {
+        this->lift_mode = mode;
+        if (lift_mode != NONE){
+            ctx.setMode(triton::modes::ONLY_ON_TAINTED, false);
+            ctx.setMode(triton::modes::CONSTANT_FOLDING, true);
+            ctx.setMode(triton::modes::AST_OPTIMIZATIONS, true);
+        }
+    }
 
 
 
@@ -46,8 +68,8 @@ class TritonTaint : public TaintTrace{
             tq_map[q_reg] = t_reg;    \
             qt_map[t_reg] = q_reg
     void InitMap() {
-        memset(qt_map, 0xff, sizeof(qt_map));
-        memset(tq_map, 0xff, sizeof(tq_map));
+//        memset(qt_map, 0xff, sizeof(qt_map));
+//        memset(tq_map, 0xff, sizeof(tq_map));
 #if defined(__x86_64__) || defined(_M_X64)
         SET_MAPS(triton::arch::register_e::ID_REG_X86_RAX,QBDI_REG_IDX(rax));
         SET_MAPS(triton::arch::register_e::ID_REG_X86_RBX,QBDI_REG_IDX(rbx));

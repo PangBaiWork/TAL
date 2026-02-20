@@ -62,8 +62,10 @@ public:
 
 class HookUtils{
     public:
-        static GumInvocationListener * gum_attach(GumInterceptor *interceptor,void *addr,GumInvocationCallback on_enter, TaintTrace* tracer);
-        static void gum_replace(void* addr,void* replace,void** backup);
+        static GumInvocationListener * gum_attach(void *addr,GumInvocationCallback on_enter, TaintTrace* tracer);
+        static void HookUtils::gum_replace(void* addr, void* replace,TaintTrace*  tracer, void** backup);
+        static void HookUtils::set_tls_hook();
+        static uint64_t HookUtils::get_latest_tls();
 
 
 private:

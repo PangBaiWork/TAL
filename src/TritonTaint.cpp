@@ -2,14 +2,14 @@
 // Created by pangb on 26-2-6.
 //
 
-#include "TritonTaint.h"
 #include "taint_analyze.h"
+#include "triton_taint.h"
 
 const QBDI::GPRState* TritonTaint::gpr_state = nullptr;
 const QBDI::FPRState* TritonTaint::fpr_state = nullptr;
-int TritonTaint::tq_map[100];
-int TritonTaint::qt_map[100];
 
+std::unordered_map<int,int> TritonTaint::qt_map;
+std::unordered_map<int,int> TritonTaint::tq_map;
 
 
 TritonTaint::TritonTaint(const uint64_t base,
@@ -28,7 +28,9 @@ TritonTaint::TritonTaint(const uint64_t base,
                     NeedConcreteRegisterValueCB);
     // These modes cannot be configured by the user. They are allways on
     ctx.setMode(triton::modes::ALIGNED_MEMORY, true);
+
     ctx.setMode(triton::modes::ONLY_ON_TAINTED, true);
+
     ctx.setMode(triton::modes::TAINT_THROUGH_POINTERS, true);
 }
 
@@ -56,7 +58,7 @@ void TritonTaint::NeedConcreteRegisterValueCB(
          LOGE("no map for reg:%s id:%d",reg.getName().c_str(),id);
          return;
      }
-     uint64_t value = QBDI_GPR_GET(gpr_state,qt_map[id]);
+     uint64_t value = QBDI_GPR_GET(gpr_state,GetQRegIdx(id));
      ctx.setConcreteRegisterValue(ctx.getRegister(id),value);
      // LOGI("need %s  pid:%d qid:%d ret %llx",reg.getName().c_str(),id,qt_map[id],value);
      // LOGI("get %s id: %d",gpr_state.,reg.getId());
@@ -95,11 +97,14 @@ QBDI::VMAction TritonTaint::InstTrace(const QBDI::VM *vm,
     UpdateRegister(gpr,fpr);
     auto instruction = triton::arch::Instruction(inst->address, reinterpret_cast<void*>(inst->address), inst->instSize);
     // Procces(inst->address, inst->instSize);
+    // ctx.getSymbolicMemory();
+    // ctx.getSymbolicRegister();
+    // ctx.liftToPython()
     ctx.disassembly(instruction);
     for (auto& operand:instruction.operands) {
         if (operand.getType() == triton::arch::operand_e::OP_REG
                && !ctx.isRegisterTainted(operand.getRegister())) {
-                    ClearTaintReg(qt_map[operand.getRegister().getParent()]);
+                    ClearTaintReg(GetQRegIdx(operand.getRegister().getParent()));
                 }
     }
 
@@ -112,9 +117,9 @@ QBDI::VMAction TritonTaint::InstTrace(const QBDI::VM *vm,
             switch (operand.getType()) {
                 case triton::arch::operand_e::OP_REG:
                     if(ctx.isRegisterTainted(operand.getRegister())) {
-                        SetTaintReg(qt_map[operand.getRegister().getParent()],0);
+                        SetTaintReg(GetQRegIdx(operand.getRegister().getParent()),0);
                     }else {
-                        ClearTaintReg(qt_map[operand.getRegister().getParent()]);
+                        ClearTaintReg(GetQRegIdx(operand.getRegister().getParent()));
                     }
                     break;
                 case triton::arch::operand_e::OP_MEM:
@@ -155,13 +160,13 @@ bool TritonTaint::Process(triton::arch::Instruction &inst) {
 
              break;
          case triton::arch::FAULT_UD:
-             LOGW("[!] Instruction at %llx not supported by Triton: %s\n",
+             LOGW("[!] Instruction at %lx not supported by Triton: %s\n",
                  inst.getAddress(), inst.getDisassembly().c_str());
              break;
          case triton::arch::FAULT_DE:
          case triton::arch::FAULT_BP:
          case triton::arch::FAULT_GP:
-             LOGW("[!] Some error happend at %llx processing instruction: %s\n",
+             LOGW("[!] Some error happend at %lx processing instruction: %s\n",
                  inst.getAddress(), inst.getDisassembly().c_str());
              break;
      }

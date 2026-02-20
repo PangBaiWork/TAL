@@ -45,7 +45,7 @@ include_directories(
         ${CMAKE_CURRENT_SOURCE_DIR}/include/
         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/${QBDI_PLATFORM}/frida
         ${CMAKE_CURRENT_SOURCE_DIR}/boost-1.90.0/libs/context/include
-
+        ${CMAKE_CURRENT_SOURCE_DIR}/qbdi-src/src
         #        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/${QBDI_PLATFORM}
 )
 set(Boost_USE_STATIC_LIBS ON) # 使用静态库
@@ -74,8 +74,12 @@ if(QBDI_PLATFORM STREQUAL "windows")
 
     cmake_host_system_information(RESULT CPU_NUMBER_OF_LOGICAL_CORES QUERY NUMBER_OF_LOGICAL_CORES)
     add_compile_options($<$<CXX_COMPILER_ID:MSVC>:/MP${CPU_NUMBER_OF_LOGICAL_CORES}>)
+    add_compile_options(/Gs4194304)
+    # 设置默认栈大小为 4MB（默认是 1MB）
+
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /Z7")
     set(CMAKE_SHARED_LINKER_FLAGS_DEBUG "${CMAKE_SHARED_LINKER_FLAGS_DEBUG} /DEBUG:FULL")
+
 
 else(QBDI_PLATFORM STREQUAL "linux" OR QBDI_PLATFORM STREQUAL "android")
     message(STATUS "Linux or Android")
@@ -88,6 +92,7 @@ endif()
 add_compile_definitions(ULTRA_FAST_MODE=1)
 
 add_subdirectory(qbdi-src)
+
 
 
 
@@ -118,7 +123,8 @@ add_library(${TARGET_NAME}_static STATIC
 
 if(QBDI_PLATFORM STREQUAL "windows")
     add_compile_definitions(_HAS_STD_BYTE=0)
-
+    target_link_options(${TARGET_NAME} PRIVATE /STACK:4194304)
+    target_link_options(${TARGET_NAME}_static PRIVATE /STACK:4194304)
 endif ()
 
 add_library(frida-gum STATIC IMPORTED)
@@ -138,6 +144,7 @@ target_link_options(${TARGET_NAME} PRIVATE -Wl,--exclude-libs=ALL -Wall -Wextra)
 target_link_libraries(${TARGET_NAME}_static
 
         frida-gum
+        qbdi-llvm
         QBDI_static
         Boost::context
         triton
@@ -145,6 +152,7 @@ target_link_libraries(${TARGET_NAME}_static
 
 target_link_libraries(${TARGET_NAME}
         frida-gum
+        qbdi-llvm
         QBDI_static
         Boost::context
         triton

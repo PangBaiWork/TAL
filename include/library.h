@@ -46,7 +46,10 @@ C_EXPORT void trace(uint64_t addr, uint64_t end, bool all,
 C_EXPORT bool remove_range(uint64_t start, uint64_t size);
 C_EXPORT bool add_taint_range(uint64_t addr, uint64_t size);
 C_EXPORT bool set_log_path(const char* path);
-C_EXPORT void set_escape(uint64_t start, uint64_t end);
+C_EXPORT void add_escape(uint64_t break_addr, uint64_t return_addr);
 C_EXPORT bool set_printable_size(int size);
 C_EXPORT bool set_taint_str(const char *str);
+C_EXPORT bool set_triton(int mode);
+ void init_main();
+
 #endif // LIBRARY_H

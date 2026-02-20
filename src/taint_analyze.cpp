@@ -1,10 +1,9 @@
-
 #include "taint_analyze.h"
 
 #include <cassert>
 
-#include "taint_utils.h"
 
+#include "taint_utils.h"
 
 std::string default_taint_file = ".asm";
 std::string default_trace_file = "trace.asm";
@@ -93,9 +92,41 @@ void TaintTrace::PrintMemoryOp(QBDI::GPRState* gpr,uint64_t offset,QBDI::MemoryA
 
 
 
-QBDI::VMAction TaintTrace::InstTrace(const QBDI::VM *vm,
-                                     const QBDI::GPRState *gpr, QBDI::FPRState *fpr) {
+template<auto M>
+struct Tunnel;
 
+template<class T, class U, T U::*M>
+struct Tunnel<M> {
+    friend T& GetPrivate(U& u) {
+        return u.*M;
+    }
+};
+
+// Separate accessor name to avoid GetPrivate overload conflicts.
+template<auto M>
+struct TunnelRunning;
+template<class T, class U, T U::*M>
+struct TunnelRunning<M> {
+    friend T& GetPrivateRunning(U& u) {
+        return u.*M;
+    }
+};
+
+template struct Tunnel<&QBDI::VM::engine>;           // T = std::unique_ptr<QBDI::Engine>
+template struct Tunnel<&QBDI::Engine::execBroker>;    // T = QBDI::ExecBroker*
+template struct Tunnel<&QBDI::ExecBroker::transferBlock>; // T = std::unique_ptr<QBDI::ExecBlock>
+template struct TunnelRunning<&QBDI::Engine::running>;       // T = bool
+
+std::unique_ptr<QBDI::Engine>& GetPrivate(QBDI::VM&);
+QBDI::ExecBroker*& GetPrivate(QBDI::Engine&);  // 注意：返回的是指针的引用
+std::unique_ptr<QBDI::ExecBlock>& GetPrivate(QBDI::ExecBroker&);
+
+// Use a dedicated name to avoid overload collisions on GetPrivate.
+bool& GetPrivateRunning(QBDI::Engine&);
+
+
+QBDI::VMAction TaintTrace::InstTrace(QBDI::VM *vm,
+                                     const QBDI::GPRState *gpr, QBDI::FPRState *fpr) {
 
     const QBDI::InstAnalysis *inst = vm->getInstAnalysis(
             QBDI::ANALYSIS_INSTRUCTION | QBDI::ANALYSIS_SYMBOL |
@@ -103,6 +134,24 @@ QBDI::VMAction TaintTrace::InstTrace(const QBDI::VM *vm,
 
 
     if (!inst) return QBDI::CONTINUE;
+
+    if (inst->address == trace_end|| IsBreakAddr(inst->address)) {
+        auto& engine_ptr = GetPrivate(*vm);                    // std::unique_ptr<Engine>&
+        GetPrivateRunning(*engine_ptr) = false;
+        auto& execBroker_ptr = GetPrivate(*engine_ptr);       // QBDI::ExecBroker*&
+        auto& transferBlock = GetPrivate(*execBroker_ptr); // std::unique_ptr<ExecBlock>&
+
+        // auto transferBlock = reinterpret_cast<QBDI::ExecBlock*>(*reinterpret_cast<uint64_t *>(block_addr));
+        transferBlock->getContext()->gprState = *gpr;
+        transferBlock->getContext()->fprState = *fpr;
+        transferBlock->getContext()->hostState.selector = inst->address;
+        guest_stack.RestoreStack();
+        transferBlock->run();
+        // end
+        // Read transfer result
+        // *gpr = transferBlock->getContext()->gprState;
+        // *fpr = transferBlock->getContext()->fprState;
+    }
     uint64_t offset = inst->address - base;
 //    triton.UpdateRegister(gpr,fpr);
 //    triton.Procces(inst->address, inst->instSize);
@@ -251,6 +300,11 @@ void TaintTrace::MemoryTrace(const QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRS
     int clear_r[4] = { -1,-1,-1},clear_w[4] = {-1,-1,-1};
     int taint_r_idx = -1,taint_w_idx = -1,clear_r_idx = -1,clear_w_idx = -1;
 
+
+    const QBDI::InstAnalysis *inst = vm->getInstAnalysis(
+        QBDI::ANALYSIS_INSTRUCTION |
+        QBDI::ANALYSIS_DISASSEMBLY | QBDI::ANALYSIS_OPERANDS);
+    if (!inst) return;
     // int16_t rOpIdx = -1,wOpIdx = -1;
     std::vector<QBDI::MemoryAccess> access_list = vm->getInstMemoryAccess();
 
@@ -304,10 +358,7 @@ void TaintTrace::MemoryTrace(const QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRS
 
 
 
-    const QBDI::InstAnalysis *inst = vm->getInstAnalysis(
-            QBDI::ANALYSIS_INSTRUCTION |
-            QBDI::ANALYSIS_DISASSEMBLY | QBDI::ANALYSIS_OPERANDS);
-    if (!inst) return;
+
 
     const uint64_t offset = inst->address - base;
 
