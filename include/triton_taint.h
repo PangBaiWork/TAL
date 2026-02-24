@@ -8,7 +8,7 @@
 #include "taint_analyze.h"
 #include "triton/context.hpp"
 #include "unordered_map"
-class TritonTaint final : public TaintTrace{
+class TritonTaint : public Trace{
    public:
     enum LiftMode {
         NONE = 0,
@@ -25,12 +25,12 @@ class TritonTaint final : public TaintTrace{
     static std::unordered_map<int,int> tq_map;
     TritonTaint(uint64_t base, PrintMode mode = ADDR_MODE,
                const std::string *path = nullptr);
-    QBDI::VMAction virtual InstTrace(const QBDI::VM *vm, const QBDI::GPRState *gpr,
-                             QBDI::FPRState *fpr);
-    void virtual PostInstTrace(QBDI::VM *vm, const QBDI::GPRState *gpr,
-                       QBDI::FPRState *fpr);
-    void virtual MemoryTrace(const QBDI::VM *vm, QBDI::GPRState *gpr,
-                     QBDI::FPRState *fpr);
+    QBDI::VMAction InstTrace( QBDI::VM *vm, QBDI::GPRState *gpr,
+                             QBDI::FPRState *fpr) override;
+    void  PostInstTrace(QBDI::VM *vm, QBDI::GPRState *gpr,
+                       QBDI::FPRState *fpr) override;
+    void  MemoryTrace(QBDI::VM *vm, QBDI::GPRState *gpr,
+                     QBDI::FPRState *fpr) override;
     static void NeedConcreteRegisterValueCB(triton::Context& tritonCtx,
                                             const triton::arch::Register& reg);
     static void NeedConcreteMemoryValueCB(
@@ -41,7 +41,7 @@ class TritonTaint final : public TaintTrace{
         TritonTaint::fpr_state = fpr_state;
     }
     bool Process(triton::arch::Instruction &inst);
-    void virtual AddTaintMemory(const uint64_t addr, const uint64_t size) {
+    void  AddTaintMemory(const uint64_t addr, const uint64_t size) override {
         // memory.InsertBySize(addr, size);
         const auto mem = triton::arch::MemoryAccess(addr, size);
         ctx.setTaintMemory(mem,true);

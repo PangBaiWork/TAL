@@ -2,50 +2,7 @@
 
 #include <cassert>
 
-
-#include "taint_utils.h"
-
-std::string default_taint_file = ".asm";
-std::string default_trace_file = "trace.asm";
-
-bool TaintTrace::SetOutputPath(const std::string *path) {
-    std::string def_path = std::string(BLANK);
-    if (path == nullptr) {
-        path = &def_path;
-    }
-    if (log.is_open()){
-        log.close();
-        log.clear();
-    }
-
-    if (all_log.is_open()){
-        all_log.close();
-        all_log.clear();
-    }
-
-
-    log.open(*path+ModeName[mode]+default_taint_file, std::ios::out | std::ios::trunc);
-    if (log.is_open()&&IsAsmMode()){
-        log << ASM_START_STR << ENTER;
-    }
-    if (IsDebugMode()||IsTraceMode())
-    {
-        all_log.open(*path + default_trace_file, std::ios::out | std::ios::trunc);
-    }
-    return log.is_open()&&all_log.is_open();
-}
-
-TaintTrace::TaintTrace(const uint64_t base,
-                       const PrintMode mode,const std::string* path): reg_name()
-{
-
-    this->base = base;
-    this->mode = mode;
-    reg_name.SetGPRArray(QBDI::GPR_NAMES, state);
-    SetOutputPath(path);
-
-}
-
+#include "trace_utils.h"
 
 
 
@@ -67,7 +24,6 @@ void TaintTrace::PrintMemoryOp(QBDI::GPRState* gpr,uint64_t offset,QBDI::MemoryA
         tmp += ", ";
         tmp += mem_op;
 
-        tmp += ASM_NOTE;
         log_str << std::left << std::setw(STR_ALIGN) << tmp;
         log_str << SPLIT;
         log_str << TName(reg_w) << EQ << ToHex(memoryAccess->value);
@@ -77,8 +33,6 @@ void TaintTrace::PrintMemoryOp(QBDI::GPRState* gpr,uint64_t offset,QBDI::MemoryA
         tmp += mem_op;
         tmp += ", ";
         tmp += RegName(rRegIdx);
-
-        tmp += ASM_NOTE;
         log_str << std::left << std::setw(STR_ALIGN) << tmp;
         log_str << TName(rRegIdx)  << EQ << ToHex(memoryAccess->value);
         log_str << PRINT_SIZE(memoryAccess->size);
@@ -92,41 +46,8 @@ void TaintTrace::PrintMemoryOp(QBDI::GPRState* gpr,uint64_t offset,QBDI::MemoryA
 
 
 
-template<auto M>
-struct Tunnel;
 
-template<class T, class U, T U::*M>
-struct Tunnel<M> {
-    friend T& GetPrivate(U& u) {
-        return u.*M;
-    }
-};
-
-// Separate accessor name to avoid GetPrivate overload conflicts.
-template<auto M>
-struct TunnelRunning;
-template<class T, class U, T U::*M>
-struct TunnelRunning<M> {
-    friend T& GetPrivateRunning(U& u) {
-        return u.*M;
-    }
-};
-
-template struct Tunnel<&QBDI::VM::engine>;           // T = std::unique_ptr<QBDI::Engine>
-template struct Tunnel<&QBDI::Engine::execBroker>;    // T = QBDI::ExecBroker*
-template struct Tunnel<&QBDI::ExecBroker::transferBlock>; // T = std::unique_ptr<QBDI::ExecBlock>
-template struct TunnelRunning<&QBDI::Engine::running>;       // T = bool
-
-std::unique_ptr<QBDI::Engine>& GetPrivate(QBDI::VM&);
-QBDI::ExecBroker*& GetPrivate(QBDI::Engine&);  // 注意：返回的是指针的引用
-std::unique_ptr<QBDI::ExecBlock>& GetPrivate(QBDI::ExecBroker&);
-
-// Use a dedicated name to avoid overload collisions on GetPrivate.
-bool& GetPrivateRunning(QBDI::Engine&);
-
-
-QBDI::VMAction TaintTrace::InstTrace(QBDI::VM *vm,
-                                     const QBDI::GPRState *gpr, QBDI::FPRState *fpr) {
+QBDI::VMAction TaintTrace::InstTrace(QBDI::VM *vm,QBDI::GPRState *gpr, QBDI::FPRState *fpr) {
 
     const QBDI::InstAnalysis *inst = vm->getInstAnalysis(
             QBDI::ANALYSIS_INSTRUCTION | QBDI::ANALYSIS_SYMBOL |
@@ -135,27 +56,8 @@ QBDI::VMAction TaintTrace::InstTrace(QBDI::VM *vm,
 
     if (!inst) return QBDI::CONTINUE;
 
-    if (inst->address == trace_end|| IsBreakAddr(inst->address)) {
-        auto& engine_ptr = GetPrivate(*vm);                    // std::unique_ptr<Engine>&
-        GetPrivateRunning(*engine_ptr) = false;
-        auto& execBroker_ptr = GetPrivate(*engine_ptr);       // QBDI::ExecBroker*&
-        auto& transferBlock = GetPrivate(*execBroker_ptr); // std::unique_ptr<ExecBlock>&
-
-        // auto transferBlock = reinterpret_cast<QBDI::ExecBlock*>(*reinterpret_cast<uint64_t *>(block_addr));
-        transferBlock->getContext()->gprState = *gpr;
-        transferBlock->getContext()->fprState = *fpr;
-        transferBlock->getContext()->hostState.selector = inst->address;
-        guest_stack.RestoreStack();
-        transferBlock->run();
-        // end
-        // Read transfer result
-        // *gpr = transferBlock->getContext()->gprState;
-        // *fpr = transferBlock->getContext()->fprState;
-    }
+    CheckAndBreak(inst->address,gpr,fpr);
     uint64_t offset = inst->address - base;
-//    triton.UpdateRegister(gpr,fpr);
-//    triton.Procces(inst->address, inst->instSize);
-    // triton.
     // analyse operands
     anal.reset();
     for(int idx = 0;idx < inst->numOperands;idx++){
@@ -181,25 +83,6 @@ QBDI::VMAction TaintTrace::InstTrace(QBDI::VM *vm,
 
     // trace
     AnalysisInstType(inst);
-
-    if (IsDebugMode()||IsTraceMode())
-    {
-
-        std::ostringstream log_str1;
-        if (IsDebugMode()&&inst->moduleName) {
-          offset = inst->address - GetAndSaveBase(inst->moduleName);
-          log_str1 << inst->moduleName << ":";
-        }
-        log_str1 << PRINT_OFFSET(offset) << inst->disassembly;
-        all_log  << std::left << std::setw(STR_ALIGN) << log_str1.str();
-        anal.PrintReg(all_log,gpr, true);
-        // allLog << ENTER;
-        all_log << SPLIT;
-        SetPostInstFlag();
-        if (IsTraceMode()) {
-          return QBDI::CONTINUE;
-        }
-    }
 
     // taint process
     if (!IsValid(Tr_idx) && !IsValid(Tw_idx)&&!IsValid(Trw_idx)){
@@ -265,7 +148,6 @@ QBDI::VMAction TaintTrace::InstTrace(QBDI::VM *vm,
     // if (inst->symbolName) logStr << inst->symbolName << "!";
     if (IsAddrMode()||IsDebugMode()) log_str << PRINT_OFFSET(offset);
     log_str << inst->disassembly;
-    log_str << ASM_NOTE;
     log  << std::left << std::setw(STR_ALIGN) << log_str.str();
     anal.PrintReg(log,gpr, true);
     log << SPLIT;
@@ -274,18 +156,10 @@ QBDI::VMAction TaintTrace::InstTrace(QBDI::VM *vm,
 
 
 }
-void TaintTrace::PostInstTrace(QBDI::VM *vm, const QBDI::GPRState *gpr, QBDI::FPRState *fpr)
+void TaintTrace::PostInstTrace(QBDI::VM *vm,QBDI::GPRState *gpr, QBDI::FPRState *fpr)
 {
     if (!enable_post_inst)return;
     CleanPostInstFlag();
-    if (IsTraceMode()||IsDebugMode()) {
-        if (IsDebugMode())log << ENTER;
-        anal.PrintReg(all_log,gpr, false);
-        all_log << ENTER;
-        if (inst_type == CALL) all_log << ENTER;
-        if(NeedFlush()) all_log.flush();
-        return;
-    }
 
     // todo... fix:debug mode taint.asm will lose post reg value
     anal.PrintReg(log,gpr, false);
@@ -294,7 +168,7 @@ void TaintTrace::PostInstTrace(QBDI::VM *vm, const QBDI::GPRState *gpr, QBDI::FP
     if (inst_type == CALL) log << ENTER;
     // if(needFlush()) log.flush();
 }
-void TaintTrace::MemoryTrace(const QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRState *fpr) {
+void TaintTrace::MemoryTrace(QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRState *fpr) {
     int taint_r[4] = { -1,-1,-1},taint_w[4] = {-1,-1,-1};
     int taint_rw = -1,clear_rw = -1;
     int clear_r[4] = { -1,-1,-1},clear_w[4] = {-1,-1,-1};
@@ -316,39 +190,14 @@ void TaintTrace::MemoryTrace(const QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRS
         switch (access.type){
             case QBDI::MEMORY_READ:
                 flag |= QBDI::MEMORY_READ;
-                // for taint str
-                if (IsTraceMode()){
-                    if(IsPrintable((unsigned char*)access.accessAddress,printable_size)){
-                        all_log << "PrintableRead:[" << (char*) access.accessAddress << "]" << ENTER;
-                        return;
-                    } else {
-                        all_log << "MemoryRead:" << PRINT_ADDR(access.accessAddress) << PRINT_SIZE(access.size) << ENTER;
-                    }
-                }
-                CheckTaintedStr(access.accessAddress);
+                CheckTaintedStr(access.accessAddress,log);
                 break;
             case QBDI::MEMORY_WRITE:
                 flag |= QBDI::MEMORY_WRITE;
-                if (IsTraceMode()){
-                    if(IsPrintable((unsigned char*)access.accessAddress,printable_size)){
-                        all_log << "PrintableWrite:[" << (char*) access.accessAddress << "]" << ENTER;
-                        return;
-                    } else {
-                        all_log << "MemoryWrite:" << PRINT_ADDR(access.accessAddress) << PRINT_SIZE(access.size) << ENTER;
-                    }
-                }
                 break;
             case QBDI::MEMORY_READ_WRITE:
-                if (IsTraceMode()){
-                    if(IsPrintable((unsigned char*)access.accessAddress,printable_size)){
-                        all_log << "PrintableRead:[" << (char*) access.accessAddress << "]"  << ENTER;
-                        return;
-                    } else {
-                        all_log << "MemoryReadWrite:" << PRINT_ADDR(access.accessAddress) << PRINT_SIZE(access.size) << ENTER;
-                    }
-                }
                 flag |= QBDI::MEMORY_READ_WRITE;
-                CheckTaintedStr(access.accessAddress);
+                CheckTaintedStr(access.accessAddress,log);
                 break;
         }
         access_p = &access;
@@ -430,7 +279,7 @@ void TaintTrace::MemoryTrace(const QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRS
                         if (IsAddrMode()||IsDebugMode()) log_str << PRINT_OFFSET(offset);
                         log_str << TAB << disassembler.AnalyzeInst(inst->address)->mnemonic<<SPACE;
                         log_str << RegName(rw) << ", " << PRINT_ADDR(access.accessAddress);
-                        log_str << ASM_NOTE;
+                        // log_str << ASM_NOTE;
                         log << std::left << std::setw(STR_ALIGN) << log_str.str();
                         log << SPLIT << TName(rw) << EQ <<ToHex(access.value);
                         log << PRINT_SIZE(access.size);
@@ -511,7 +360,7 @@ void TaintTrace::MemoryTrace(const QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRS
             log_str2 << TAB << disassembler.AnalyzeInst(inst->address)->mnemonic << SPACE;
             log_str2 << PRINT_ADDR(access.accessAddress) << ", "
             <<  RegName(IsValid(taint_r_idx)?taint_r[0]:clear_r[0]) ;
-            log_str2 << ASM_NOTE;
+            // log_str2 << ASM_NOTE;
             log << std::left << std::setw(STR_ALIGN) << log_str2.str();
             log << SPLIT <<  PRINT_ADDR(access.accessAddress) << EQ <<ToHex(access.value);
             log << PRINT_SIZE(access.size);

@@ -13,7 +13,7 @@ std::unordered_map<int,int> TritonTaint::tq_map;
 
 
 TritonTaint::TritonTaint(const uint64_t base,
-                       const PrintMode mode,const std::string* path) : TaintTrace(base,mode,path) {
+                       const PrintMode mode,const std::string* path) : Trace(base,mode,path) {
 #if defined(__x86_64__) || defined(_M_X64)
     cs_arch_register_x86();
     ctx.setArchitecture(triton::arch::architecture_e::ARCH_X86_64);
@@ -64,15 +64,14 @@ void TritonTaint::NeedConcreteRegisterValueCB(
      // LOGI("get %s id: %d",gpr_state.,reg.getId());
  }
 
-QBDI::VMAction TritonTaint::InstTrace(const QBDI::VM *vm,
-                                     const QBDI::GPRState *gpr, QBDI::FPRState *fpr) {
+QBDI::VMAction TritonTaint::InstTrace(QBDI::VM *vm,QBDI::GPRState *gpr, QBDI::FPRState *fpr) {
 
     const QBDI::InstAnalysis *inst = vm->getInstAnalysis(
             QBDI::ANALYSIS_INSTRUCTION | QBDI::ANALYSIS_SYMBOL |
                  QBDI::ANALYSIS_DISASSEMBLY | QBDI::ANALYSIS_OPERANDS );
-
+    CheckAndBreak(inst->address,gpr,fpr);
     uint64_t offset = inst->address - base;
-
+    // LOGI("triton");
     AnalysisInstType(inst);
     anal.reset();
     for(int idx = 0;idx < inst->numOperands;idx++){
@@ -137,7 +136,7 @@ QBDI::VMAction TritonTaint::InstTrace(const QBDI::VM *vm,
     return QBDI::CONTINUE;
 }
 
-void TritonTaint::PostInstTrace(QBDI::VM *vm, const QBDI::GPRState *gpr, QBDI::FPRState *fpr) {
+void TritonTaint::PostInstTrace(QBDI::VM *vm,QBDI::GPRState *gpr, QBDI::FPRState *fpr) {
     if (enable_post_inst) {
         anal.PrintReg(log,gpr, false);
         log << ENTER;
@@ -149,7 +148,7 @@ void TritonTaint::PostInstTrace(QBDI::VM *vm, const QBDI::GPRState *gpr, QBDI::F
 }
 
 
-void TritonTaint::MemoryTrace(const QBDI::VM *vm, QBDI::GPRState *gpr,
+void TritonTaint::MemoryTrace(QBDI::VM *vm, QBDI::GPRState *gpr,
                               QBDI::FPRState *fpr) {}
 
 bool TritonTaint::Process(triton::arch::Instruction &inst) {

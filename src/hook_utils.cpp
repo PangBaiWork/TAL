@@ -3,11 +3,7 @@
 //
 
 #include <cstdio>
-
-
-
 #include "hook_utils.h"
-
 #include "utils.h"
 using namespace std;
 
@@ -15,7 +11,7 @@ using namespace std;
 
 
 
-void HookUtils::gum_replace(void* addr, void* replace, TaintTrace* tracer, void** backup){
+void HookUtils::gum_replace(void* addr, void* replace, Trace* tracer, void** backup){
     GumInterceptor *interceptor;
     interceptor = gum_interceptor_obtain();
     gum_interceptor_begin_transaction(interceptor);
@@ -28,15 +24,13 @@ void HookUtils::gum_replace(void* addr, void* replace, TaintTrace* tracer, void*
     LOGI("HOOK REPLACE:   %d",ret);
 }
 
-
-// GumInvocationListener *listener=nullptr;
-GumInvocationListener *HookUtils::gum_attach(void* addr, GumInvocationCallback on_enter, TaintTrace* tracer){
+GumInvocationListener *HookUtils::gum_attach(void* addr, GumInvocationCallback on_enter, Trace* tracer){
     auto interceptor = gum_interceptor_obtain();
     gum_interceptor_begin_transaction(interceptor);
     if (on_enter == nullptr) on_enter = empty_on_enter;
     auto data = new CallbackData();
     data->tracer = tracer;
-//    void* data = malloc(sizeof(void*));
+
     auto listener = gum_make_call_listener(on_enter,empty_on_leave, data, nullptr);
     data->listener = listener;
     data->interceptor = interceptor;
@@ -53,8 +47,6 @@ HOOK_DEF(void,call_array,const char* array_name,
          size_t count,
          bool reverse,
          const char* realpath){
-
-    // LOGD("call init function: %s %s ",array_name,realpath);
     orig_call_array(array_name,functions,count,reverse,realpath);
 
 }
@@ -96,13 +88,8 @@ void hookUtils::hookLinker(GumInvocationCallback on_leave) {
 */
 void HookUtils::empty_on_enter(GumInvocationContext * context,
                               gpointer user_data) {
-
-//    LOGD("call empty_onEnter");
-
 }
 
 void HookUtils::empty_on_leave(GumInvocationContext * context,
                               gpointer user_data) {
-//    LOGD("call empty_onLeave");
-
 }

@@ -11,12 +11,24 @@ std::string ToHex(uint64_t value) {
     sprintf(buff, "0x%llx", value);
     return buff;
 }
-
-inline std::string ByteToHex(unsigned char byte) {
+static const char hex_chars[] = "0123456789abcdef";
+std::string ByteToHex(unsigned char byte) {
     std::stringstream ss;
     ss << std::hex << std::setw(2) << std::setfill('0')
        << static_cast<uint8_t>(byte);
     return ss.str();
+}
+std::string DataToHex(uint8_t* bytes, int size)
+{
+
+    std::string result;
+    result.reserve(size * 2);
+
+    for (int i = 0; i < size; ++i) {
+        result.push_back(hex_chars[(bytes[i] >> 4) & 0x0F]);
+        result.push_back(hex_chars[bytes[i] & 0x0F]);
+    }
+    return result;
 }
 
 std::string ReadMemToHex(const void *ptr, size_t length) {
@@ -39,16 +51,24 @@ int GetSameStrLen(const char *str1, const char *str2) {
 }
 
 int IsPrintable(unsigned char *str,int max) {
-    // if (str == NULL||str <=(unsigned char*) 0x3000) return 0;
+    if (str == NULL||str <=(unsigned char*) 0x3000||max==0) return 0;
     int i = 0;
     for (i = 0; str[i] != '\0'&& i < max; i++) {
         unsigned char c = str[i];
-        // ASCII 可打印字符范围：32-126（空格到波浪线）
         if (c < 32 || c > 126) {
             return 0;
         }
     }
     return i == max;
+}
+std::string PrintStr(uint64_t addr) {
+    std::string ss;
+    auto byte_ptr = reinterpret_cast<char *>(addr);
+    while (*byte_ptr>32&&*byte_ptr<126) {
+        ss.push_back(*byte_ptr);
+        byte_ptr++;
+    }
+    return ss;
 }
 
 #if defined(_M_X64)
@@ -56,21 +76,18 @@ int IsPrintable(unsigned char *str,int max) {
 #include <windows.h>
 #include <cstdint>
 void StackInfo::SaveStack(){
-    NT_TIB* tib = (NT_TIB*)NtCurrentTeb();
+    auto tib = reinterpret_cast<NT_TIB *>(NtCurrentTeb());
     stack_base = tib->StackBase;
     stack_limit = tib->StackLimit;
-
-    // DeallocationStack 在 TEB 偏移 0x1478 (x64)
     auto teb = (uint8_t*)NtCurrentTeb();
     deallocation_stack = *(void**)(teb + 0x1478);
 }
 
 void StackInfo::RestoreStack(){
-    NT_TIB* tib = (NT_TIB*)NtCurrentTeb();
+    auto tib = reinterpret_cast<NT_TIB *>(NtCurrentTeb());
     tib->StackBase = stack_base;
     tib->StackLimit = stack_limit;
-
-    auto teb = (uint8_t*)NtCurrentTeb();
+    auto teb = reinterpret_cast<uint8_t *>(NtCurrentTeb());
     *(void**)(teb + 0x1478) = deallocation_stack;
 }
 #else
