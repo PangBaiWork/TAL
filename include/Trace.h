@@ -81,6 +81,25 @@ class Trace {
     bool IsDebugMode() const { return mode == DEBUG_MODE; }
     bool IsTraceMode() const { return mode == TRACE_MODE; }
 
+    void PrintMemoryOp(QBDI::MemoryAccess& access,std::string& printable) {
+        const char *op_str = nullptr;
+        if (access.type==QBDI::MEMORY_READ) {
+            op_str = " R";
+        }else if (access.type==QBDI::MEMORY_WRITE) {
+            op_str = " W";
+        }else if (access.type==QBDI::MEMORY_READ_WRITE) {
+            op_str = " RW";
+        }
+        log << op_str << PRINT_ADDR(access.accessAddress) << "=";
+        if (printable.empty()) {
+            log << ToHex(access.value);
+        }else {
+            log << "\""<<printable << "\"";
+        }
+        log << PRINT_SIZE(access.size);
+    }
+
+
     bool CheckAndBreak(uint64_t addr, const QBDI::GPRState *gpr,
                                          QBDI::FPRState *fpr);
     void AnalysisInstType(const QBDI::InstAnalysis *inst);

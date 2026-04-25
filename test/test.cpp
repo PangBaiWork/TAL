@@ -173,8 +173,7 @@ int main()
 #ifdef _MSC_VER
     init_main();
 #endif
-    setvbuf(stdout, NULL, _IONBF, 0);
-    setvbuf(stderr, NULL, _IONBF, 0);
+
 
     std::cout << "Hello World!\n";
     unsigned char flag[17]="1145144444441111";
@@ -186,13 +185,15 @@ int main()
     // taint_trace((void*)&btea,1,(uint64_t)flag,16,2);
     // setbuf(stdout, NULL);
     // taint_trace_str((uint64_t)&btea,1,(char*)flag,TRACE_MODE);
-    trace((uint64_t)&btea,(uint64_t)0,1,TRITON_MODE);
-    add_taint_range((uint64_t)flag,16);
+    trace((uint64_t)&btea,(uint64_t)time_test,1,TRACE_MODE);
+
+    // add_taint_range((uint64_t)flag,16);
+    set_taint_str((char*)flag);
     // set_triton(1);
     // remove_range((uint64_t)memcpy_test,4);
     // remove_range((uint64_t)fprintf,4);
-    add_escape((uint64_t)memcpy_test,(uint64_t)time_test);
-    add_escape((uint64_t)end,(uint64_t)0);
+    // add_escape((uint64_t)memcpy_test,(uint64_t)time_test);
+    // add_escape((uint64_t)end,(uint64_t)0);
     LOGD("test begin");
     btea((uint32_t*)flag,4,(uint32_t*)key);
     free_test();

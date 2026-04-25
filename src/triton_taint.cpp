@@ -36,7 +36,8 @@ TritonTaint::TritonTaint(const uint64_t base,
 
 
 void TritonTaint::NeedConcreteMemoryValueCB(triton::Context& ctx, const triton::arch::MemoryAccess& mem) {
-    ctx.setConcreteMemoryAreaValue(mem.getAddress(), reinterpret_cast<const void*>(mem.getAddress()),mem.getSize());
+    // if (mem.getAddress()<READABLE_ADDR) return;
+        // ctx.setConcreteMemoryAreaValue(mem.getAddress(), reinterpret_cast<const void*>(mem.getAddress()),mem.getSize());
  }
 
 
@@ -106,11 +107,21 @@ QBDI::VMAction TritonTaint::InstTrace(QBDI::VM *vm,QBDI::GPRState *gpr, QBDI::FP
                     ClearTaintReg(GetQRegIdx(operand.getRegister().getParent()));
                 }
     }
+    bool tainted = Process(instruction);
+    if (taint_str) {
+        for (auto& operand:instruction.operands) {
+            if (operand.getType() == triton::arch::operand_e::OP_MEM) {
+                if (CheckTaintedStr(operand.getMemory().getAddress(),log)) {
+                    tainted = Process(instruction);
+                    break;
+                }
+            }
+        }
+    }
+    if (tainted) {
 
-    if (Process(instruction)) {
         log << std::left << std::setw(STR_ALIGN) << PRINT_OFFSET(offset) + inst->disassembly;
         anal.PrintReg(log, gpr, true);
-        log << SPLIT;
         SetPostInstFlag();
         for (auto& operand:instruction.operands) {
             switch (operand.getType()) {
@@ -123,9 +134,10 @@ QBDI::VMAction TritonTaint::InstTrace(QBDI::VM *vm,QBDI::GPRState *gpr, QBDI::FP
                     break;
                 case triton::arch::operand_e::OP_MEM:
                     if(ctx.isMemoryTainted(operand.getMemory())) {
-                        // operand.getMemory()
-                        log << PRINT_ADDR(operand.getMemory().getAddress()) << PRINT_SIZE(operand.getMemory().getSize()) << SPLIT;
+                        log << SPACE << PRINT_ADDR(operand.getMemory().getAddress());
+                        log << PRINT_SIZE(operand.getMemory().getSize()) << SPLIT;
                     }
+                    CheckTaintedStr(operand.getMemory().getAddress(),log);
                     break;
                 default:
                     break;

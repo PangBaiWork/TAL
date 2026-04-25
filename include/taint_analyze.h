@@ -13,7 +13,7 @@
 
 #include "QBDI.h"
 #include "QBDI/State.h"
-#include "Trace.h"
+#include "trace.h"
 #include "trace_utils.h"
 #include "utils.h"
 class TaintTrace:public Trace{

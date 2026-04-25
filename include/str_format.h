@@ -8,7 +8,7 @@
 #define STR_ALIGN 42
 #define UNKNOWN_CONST 0xdeadbeef
 #define TAB "\t"
-#define SPLIT " | "
+#define SPLIT "|"
 #define ENTER "\n"
 #define SPACE " "
 #define EQ "="

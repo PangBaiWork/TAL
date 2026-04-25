@@ -2,7 +2,7 @@
 // Created by pangb on 26-2-23.
 //
 
-#include "../include/Trace.h"
+#include "trace.h"
 
 Trace::Trace(const uint64_t base, const PrintMode mode,
              const std::string *path) {
@@ -44,7 +44,7 @@ QBDI::VMAction Trace::InstTrace(QBDI::VM *vm, QBDI::GPRState *gpr,
         }
     }
     AnalysisInstType(inst);
-
+    log << std::endl;
     if (inst->moduleName) {
         offset = inst->address - GetAndSaveBase(inst->moduleName);
         log << inst->moduleName << ":";
@@ -54,7 +54,7 @@ QBDI::VMAction Trace::InstTrace(QBDI::VM *vm, QBDI::GPRState *gpr,
     }
     log << BASE_LOG;
     anal.PrintReg(log,gpr,true);
-    log << SPLIT;
+
     SetPostInstFlag();
     return QBDI::CONTINUE;
 }
@@ -62,46 +62,40 @@ QBDI::VMAction Trace::InstTrace(QBDI::VM *vm, QBDI::GPRState *gpr,
 void Trace::PostInstTrace(QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRState *fpr) {
     if (enable_post_inst) {
         anal.PrintReg(log,gpr,false);
-        log << ENTER;
+
         if (inst_type == CALL&&!IsBinMode()) log << ENTER;
-        if(NeedFlush()) log.flush();
         CleanPostInstFlag();
     }
 }
 
 void Trace::MemoryTrace(QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRState *fpr) {
-    if (IsBinMode())return;
+    if (IsBinMode()||inst_type==CALL)return;
     std::vector<QBDI::MemoryAccess> access_list = vm->getInstMemoryAccess();
     char flag = 0;
+    std::string printable;
     for (QBDI::MemoryAccess &access:access_list){
         switch (access.type){
             case QBDI::MEMORY_READ:
                 flag |= QBDI::MEMORY_READ;
-                if(IsPrintable(
-                        reinterpret_cast<uint8_t *>(access.accessAddress),printable_size)){
-                    log << "PrintableRead:[" << PrintStr(access.accessAddress) << "]" << ENTER;
-                } else {
-                    log << "MemoryRead:" << PRINT_ADDR(access.accessAddress) << PRINT_SIZE(access.size) << ENTER;
+                if(IsPrintable(access.accessAddress,printable_size)){
+                    printable = PrintStr(access.accessAddress);
                 }
+                PrintMemoryOp(access,printable);
                 CheckTaintedStr(access.accessAddress,log);
                 break;
             case QBDI::MEMORY_WRITE:
                 flag |= QBDI::MEMORY_WRITE;
-                if(IsPrintable(
-                        reinterpret_cast<uint8_t *>(access.accessAddress),printable_size)){
-                    log << "PrintableWrite:[" << PrintStr(access.accessAddress)<< "]" << ENTER;
-                } else {
-                    log << "MemoryWrite:" << PRINT_ADDR(access.accessAddress) << PRINT_SIZE(access.size) << ENTER;
+                if(IsPrintable(access.accessAddress,printable_size)){
+                    printable = PrintStr(access.accessAddress);
                 }
+                PrintMemoryOp(access,printable);
                 break;
             case QBDI::MEMORY_READ_WRITE:
-                if(IsPrintable(
-                        reinterpret_cast<uint8_t *>(access.accessAddress),printable_size)){
-                    log << "PrintableReadWrite:[" << PrintStr(access.accessAddress) << "]"  << ENTER;
-                } else {
-                    log << "MemoryReadWrite:" << PRINT_ADDR(access.accessAddress) << PRINT_SIZE(access.size) << ENTER;
-                }
                 flag |= QBDI::MEMORY_READ_WRITE;
+                if(IsPrintable(access.accessAddress,printable_size)){
+                    printable = PrintStr(access.accessAddress);
+                }
+                PrintMemoryOp(access,printable);
                 CheckTaintedStr(access.accessAddress,log);
                 break;
         }
@@ -169,6 +163,7 @@ bool Trace::CheckAndBreak(uint64_t addr, const QBDI::GPRState *gpr,
         }
     }
     if (need_break) {
+        LOGI("vm break on %llx",addr);
         auto& engine_ptr = GetPrivate(*qvm);
         auto& execBroker_ptr = GetPrivate(*engine_ptr);
         auto& transferBlock = GetPrivate(*execBroker_ptr);
@@ -250,21 +245,28 @@ void Trace::RegAnalysis::PrintReg(std::ofstream &log, const QBDI::GPRState *gpr,
     if (before) {
         while (IsValid(Tr_idx))
             log << SPACE << tracer->TName(Tr[Tr_idx]) << EQ
-                << PRINT_GPR(Tr[Tr_idx--]) + SPACE;
+                << PRINT_GPR(Tr[Tr_idx--]);
+        // + SPACE;
         while (IsValid(Cr_idx))
             log << SPACE << tracer->TName(Cr[Cr_idx]) << EQ
-                << PRINT_GPR(Cr[Cr_idx--]) + SPACE;
+                << PRINT_GPR(Cr[Cr_idx--]);
+        // + SPACE;
     }
     while (IsValid(Tw_idx))
         log << SPACE << tracer->TName(Tw[Tw_idx]) << EQ
-            << PRINT_GPR(Tw[Tw_idx--]) + SPACE;
+            << PRINT_GPR(Tw[Tw_idx--]);
+    // + SPACE;
     while (IsValid(Cw_idx))
         log << SPACE << tracer->TName(Cw[Cw_idx]) << EQ
-            << PRINT_GPR(Cw[Cw_idx--]) + SPACE;
+            << PRINT_GPR(Cw[Cw_idx--]);
+    // + SPACE;
     while (IsValid(Trw_idx))
         log << SPACE << tracer->TName(Trw[Trw_idx]) << EQ
-            << PRINT_GPR(Trw[Trw_idx--]) + SPACE;
+            << PRINT_GPR(Trw[Trw_idx--]);
+    // + SPACE;
     while (IsValid(Crw_idx))
         log << SPACE << tracer->TName(Crw[Crw_idx]) << EQ
-            << PRINT_GPR(Crw[Crw_idx--]) + SPACE;
+            << PRINT_GPR(Crw[Crw_idx--]);
+    // + SPACE;
+    log << SPACE << SPLIT;
 }

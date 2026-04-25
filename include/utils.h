@@ -82,7 +82,7 @@ public:
     void RestoreStack();
 };
 
-int IsPrintable(unsigned char *str,int max);
+int IsPrintable(QBDI::rword addr,int max);
 
 
 // for private var get

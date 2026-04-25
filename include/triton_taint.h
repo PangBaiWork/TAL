@@ -43,8 +43,11 @@ class TritonTaint : public Trace{
     bool Process(triton::arch::Instruction &inst);
     void  AddTaintMemory(const uint64_t addr, const uint64_t size) override {
         // memory.InsertBySize(addr, size);
-        const auto mem = triton::arch::MemoryAccess(addr, size);
-        ctx.setTaintMemory(mem,true);
+        for (int i = 0; i < size; i++) {
+            // memory.insert(addr + i);
+            ctx.setTaintMemory(triton::arch::MemoryAccess(addr+i, 1),true);
+        }
+
     }
     static int GetQRegIdx(int id){
         auto it = qt_map.find(id);

@@ -28,11 +28,12 @@ void run_on_stack(BorrowedStackAllocator &alloc, F &&fn) {
 }
 
 void on_resume(GumInvocationContext *context, gpointer user_data) {
-    LOGI("escape attached");
+
     const auto data = static_cast<CallbackData *>(user_data);
     Trace *tracer = data->tracer;
     std::shared_ptr<QBDI::VM> qvm = tracer->qvm;
     tracer->guest_stack.SaveStack();
+    LOGI("vm resume on: %llx",context->function);
     gum_interceptor_detach(data->interceptor, data->listener);
     auto address = reinterpret_cast<uint64_t>(context->function);
     gum_tls_key_set_value(gum_interceptor_get_key(),nullptr);
@@ -42,6 +43,7 @@ void on_resume(GumInvocationContext *context, gpointer user_data) {
         tracer->SetPrivateRunning(false);
         const uint64_t start = address;
         qvm->run(start, 0);
+        LOGE("VM end unexpectedly on resume hook");
     });
 }
 
@@ -96,17 +98,23 @@ static void on_enter(GumInvocationContext* context,gpointer user_data) {
         LOGI("[vm] run once on custom stack\n");
         tracer->host_stack.SaveStack();
         qvm->run(reinterpret_cast<uint64_t>(address), 0);
+        LOGE("VM end unexpectedly on enter hook");
     });
     // broken stack ignore
 
 }
 
 
+
 C_EXPORT void trace(const uint64_t addr, const uint64_t end, const bool all,
                     int mode) {
     LOGI("hooking %lx", addr);
     GumModule *module = gum_process_find_module_by_address(addr);
-    const uint64_t base_addr = gum_module_get_range(module)->base_address;
+    uint64_t base_addr = 0;
+
+    if (module) {
+        base_addr = gum_module_get_range(module)->base_address;
+    }
     LOGI("Base:%lx", base_addr);
     if (!cur_tracer) {
         if (mode == TRITON_MODE) {
@@ -149,7 +157,7 @@ C_EXPORT void add_resume(const uint64_t resume_addr) {
 
 C_EXPORT bool add_taint_range(const uint64_t addr, const uint64_t size) {
     if (cur_tracer) {
-        LOGI("add taint mem: %lx size:%lx", addr, size);
+        LOGI("add taint mem : %lx size:%lx", addr, size);
         cur_tracer->AddTaintMemory(addr, size);
         return true;
     }

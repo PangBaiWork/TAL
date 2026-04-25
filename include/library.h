@@ -5,7 +5,7 @@
 #ifndef LIBRARY_H
 #define LIBRARY_H
 
-#include <cstdint>
+#include <stdint.h>
 
 #if defined(__GNUC__) || defined(__clang__)
 #define C_EXPORT  extern "C" __attribute__((visibility("default")))

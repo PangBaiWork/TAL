@@ -50,7 +50,8 @@ int GetSameStrLen(const char *str1, const char *str2) {
     return count;
 }
 
-int IsPrintable(unsigned char *str,int max) {
+int IsPrintable(QBDI::rword addr,int max) {
+    uint8_t *str = (uint8_t *)addr;
     if (str == NULL||str <=(unsigned char*) 0x3000||max==0) return 0;
     int i = 0;
     for (i = 0; str[i] != '\0'&& i < max; i++) {

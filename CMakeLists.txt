@@ -8,15 +8,37 @@ set(QBDI_ARCH "X86_64")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-set(QBDI_LOG_DEBUG ON)
+#set(QBDI_LOG_DEBUG ON)
 set(CMAKE_BUILD_PARALLEL_LEVEL 8)
-set(CMAKE_BUILD_TYPE Debug)
-set(TARGET_NAME "attd")
+set(CMAKE_BUILD_TYPE Release)
+set(TARGET_NAME "tal")
 project(${TARGET_NAME})
 
 if(CMAKE_HOST_SYSTEM_NAME MATCHES "Linux")
     set(QBDI_PLATFORM "linux")
     message("current platform: Linux ")
+    # 在项目最顶层，所有 add_subdirectory / FetchContent 之前设置
+    set(CMAKE_POSITION_INDEPENDENT_CODE ON CACHE BOOL "" FORCE)
+
+    # 强制全局 fPIC（兜底）
+
+    set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS} -fPIC")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
+
+    if (CMAKE_BUILD_TYPE MATCHES "Release")
+        
+
+    set(CMAKE_C_FLAGS_RELEASE "-Os")
+    set(CMAKE_CXX_FLAGS_RELEASE "-Os")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -ffunction-sections -fdata-sections -fvisibility=hidden -fno-asynchronous-unwind-tables -fno-unwind-tables")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ffunction-sections -fdata-sections -fvisibility=hidden -fno-asynchronous-unwind-tables -fno-unwind-tables")
+
+    add_link_options(
+            -Wl,--gc-sections
+            -Wl,--strip-all
+            -flto=auto
+    )
+    endif ()
 
 elseif(CMAKE_HOST_SYSTEM_NAME MATCHES "Windows")
     set(QBDI_PLATFORM "windows")
@@ -38,6 +60,14 @@ if(ANDROID OR CMAKE_SYSTEM_NAME STREQUAL "Android")
 
     message(STATUS "NDK version: ${ANDROID_NDK_VERSION}")
     message(STATUS "Android API level: ${ANDROID_PLATFORM}")
+endif()
+
+
+
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    set(CMAKE_C_VISIBILITY_PRESET hidden)
+    set(CMAKE_CXX_VISIBILITY_PRESET hidden)
+    set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
 endif()
 
 
@@ -84,7 +114,7 @@ else(QBDI_PLATFORM STREQUAL "linux" OR QBDI_PLATFORM STREQUAL "android")
     message(STATUS "Linux or Android")
     set(FRIDA_LIB "libfrida-gum.a")
     set(QBDI_LIB "libQBDI.a")
-    set(CMAKE_CXX_FLAGS_RELEASE " -DNDEBUG -ffast-math -flto -fomit-frame-pointer -funroll-loops -fno-stack-protector")
+    set(CMAKE_CXX_FLAGS_RELEASE "-flto -fomit-frame-pointer -funroll-loops -fno-stack-protector")
 endif()
 
 
@@ -167,11 +197,10 @@ endif ()
 target_link_libraries(${TARGET_NAME}_test
         ${TARGET_NAME}_static
 )
-
-add_custom_command(TARGET attd POST_BUILD
+add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_SOURCE_DIR}/${CMAKE_BUILD_TYPE}/${QBDI_PLATFORM}"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "$<TARGET_FILE:attd>"
-        "${CMAKE_CURRENT_SOURCE_DIR}/${CMAKE_BUILD_TYPE}/${QBDI_PLATFORM}/$<TARGET_FILE_NAME:attd>"
+        "$<TARGET_FILE:${TARGET_NAME}>"
+        "${CMAKE_CURRENT_SOURCE_DIR}/${CMAKE_BUILD_TYPE}/${QBDI_PLATFORM}/$<TARGET_FILE_NAME:${TARGET_NAME}>"
         VERBATIM
-        )
+)
