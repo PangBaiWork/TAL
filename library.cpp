@@ -59,6 +59,7 @@ static void on_enter(GumInvocationContext* context,gpointer user_data) {
     const auto data = static_cast<CallbackData *>(user_data);
     Trace *tracer = data->tracer;
     void *address = context->function;
+    tracer->modules = gum_module_map_new();
 
     gum_interceptor_detach(data->interceptor, data->listener);
     gum_interceptor_unignore_current_thread(data->interceptor);
@@ -119,7 +120,7 @@ C_EXPORT void trace(const uint64_t addr, const uint64_t end, const bool all,
     if (!cur_tracer) {
         if (mode == TRITON_MODE) {
             cur_tracer = new TritonTaint(base_addr, static_cast<PrintMode>(mode));
-        } else if (mode == TRACE_MODE || mode == DEBUG_MODE||mode == BIN_MODE) {
+        } else if (mode == TRACE_MODE || mode == DEBUG_MODE||mode == BIN_MODE||mode== TRACE_ARGS_MODE) {
             cur_tracer = new Trace(base_addr, static_cast<PrintMode>(mode));
         } else if (mode == ADDR_MODE) {
             cur_tracer = new TaintTrace(base_addr, static_cast<PrintMode>(mode));
@@ -208,18 +209,21 @@ C_INIT void init_main() {
 
 #ifdef QBDI_PLATFORM_WINDOWS
 #include <windows.h>
-BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call,
-                      LPVOID lpReserved) {
+BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved) {
     switch (ul_reason_for_call) {
         case DLL_PROCESS_ATTACH:
-            //  For optimization.
             DisableThreadLibraryCalls(hModule);
+            init_main();               // 只在进程附加时调用一次
             break;
         case DLL_PROCESS_DETACH:
+            // 清理代码（如果需要）
+            break;
+        case DLL_THREAD_ATTACH:
+        case DLL_THREAD_DETACH:
+            // 留空或处理线程相关逻辑
             break;
     }
-    init_main();
-    return TRUE;  // Successful DLL_PROCESS_ATTACH.
+    return TRUE;
 }
 
 #endif

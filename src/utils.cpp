@@ -52,7 +52,7 @@ int GetSameStrLen(const char *str1, const char *str2) {
 
 int IsPrintable(QBDI::rword addr,int max) {
     uint8_t *str = (uint8_t *)addr;
-    if (str == NULL||str <=(unsigned char*) 0x3000||max==0) return 0;
+    if (str == NULL||str <=(unsigned char*) READABLE_ADDR||max==0) return 0;
     int i = 0;
     for (i = 0; str[i] != '\0'&& i < max; i++) {
         unsigned char c = str[i];
@@ -60,6 +60,9 @@ int IsPrintable(QBDI::rword addr,int max) {
             return 0;
         }
     }
+
+
+
     return i == max;
 }
 std::string PrintStr(uint64_t addr) {
@@ -235,3 +238,37 @@ void print_qbdi_reg(QBDI::GPRState *state) {
   // x86 32-bit
 #endif
 
+
+
+void Hexdump(std::ostream& os, const void* data, size_t size, uintptr_t base ) {
+    constexpr size_t width = 16;
+    const auto* p = static_cast<const unsigned char*>(data);
+
+    for (size_t i = 0; i < size; i += width) {
+        size_t n = std::min(width, size - i);
+
+        os << std::hex << std::setw(16) << std::setfill('0')
+           << (base + i) << "  ";
+
+        for (size_t j = 0; j < width; ++j) {
+            if (j < n) {
+                os << std::setw(2) << static_cast<unsigned>(p[i + j]) << ' ';
+            } else {
+                os << "   ";
+            }
+
+            if (j == 7) os << ' ';
+        }
+
+        os << " |";
+
+        for (size_t j = 0; j < n; ++j) {
+            unsigned char c = p[i + j];
+            os << (std::isprint(static_cast<unsigned char>(c)) ? static_cast<char>(c) : '.');
+        }
+
+        os << "|\n";
+    }
+
+    os << std::dec << std::setfill(' ');
+}

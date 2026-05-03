@@ -29,7 +29,7 @@
 #else
     #define C_INIT
 #endif
-
+#define READABLE_ADDR 0x3000
 std::string PrintStr(uint64_t addr);
 std::string ReadMemToHex(const void* ptr, size_t length);
 std::string ToHex(uint64_t value);
@@ -121,5 +121,5 @@ std::unique_ptr<QBDI::ExecBlock>& GetPrivate(QBDI::ExecBroker&);
 
 // Use a dedicated name to avoid overload collisions on GetPrivate.
 bool& GetPrivateRunning(QBDI::Engine&);
-
+void Hexdump(std::ostream& os, const void* data, size_t size, uintptr_t base = 0);
 #endif //UTILS_H

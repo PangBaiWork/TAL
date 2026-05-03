@@ -158,7 +158,7 @@ QBDI::VMAction TaintTrace::InstTrace(QBDI::VM *vm,QBDI::GPRState *gpr, QBDI::FPR
 }
 void TaintTrace::PostInstTrace(QBDI::VM *vm,QBDI::GPRState *gpr, QBDI::FPRState *fpr)
 {
-    if (!enable_post_inst)return;
+    if (!GetPostInstFlag())return;
     CleanPostInstFlag();
 
     // todo... fix:debug mode taint.asm will lose post reg value
@@ -181,6 +181,37 @@ void TaintTrace::MemoryTrace(QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRState *
     if (!inst) return;
     // int16_t rOpIdx = -1,wOpIdx = -1;
     std::vector<QBDI::MemoryAccess> access_list = vm->getInstMemoryAccess();
+
+
+    // analyse operands
+    for(int16_t idx = 0;idx < inst->numOperands;idx++) {
+        const QBDI::OperandAnalysis &operand = inst->operands[idx];
+        if (operand.type==QBDI::OPERAND_SEG) {
+            // fs/gs not support
+            if ((operand.regName[0]=='F'&&operand.regName[1]=='S')||
+                (operand.regName[0]=='G'&&operand.regName[1]=='S')) {
+                return;
+                }
+        } else if(operand.regAccess == QBDI::REGISTER_READ ){
+            if (IsTaint(operand.regCtxIdx)){
+                taint_r[++taint_r_idx] = operand.regCtxIdx;
+            } else {
+                clear_r[++clear_r_idx] = operand.regCtxIdx;
+            }
+        }else if (operand.regAccess == QBDI::REGISTER_WRITE ){
+            if (IsTaint(operand.regCtxIdx)){
+                taint_w[++taint_w_idx] = operand.regCtxIdx;
+            } else {
+                clear_w[++clear_w_idx] = operand.regCtxIdx;
+            }
+        }else if (operand.regAccess == QBDI::REGISTER_READ_WRITE){
+            if (IsTaint(operand.regCtxIdx)){
+                taint_rw = operand.regCtxIdx;
+            } else {
+                clear_rw = operand.regCtxIdx;
+            }
+        }
+    }
 
     char flag = 0;
     QBDI::MemoryAccess* access_p=nullptr;
@@ -210,30 +241,6 @@ void TaintTrace::MemoryTrace(QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRState *
 
 
     const uint64_t offset = inst->address - base;
-
-    // analyse operands
-    for(int16_t idx = 0;idx < inst->numOperands;idx++) {
-        const QBDI::OperandAnalysis &operand = inst->operands[idx];
-        if(operand.regAccess == QBDI::REGISTER_READ ){
-            if (IsTaint(operand.regCtxIdx)){
-                taint_r[++taint_r_idx] = operand.regCtxIdx;
-            } else {
-                clear_r[++clear_r_idx] = operand.regCtxIdx;
-            }
-        }else if (operand.regAccess == QBDI::REGISTER_WRITE ){
-            if (IsTaint(operand.regCtxIdx)){
-                taint_w[++taint_w_idx] = operand.regCtxIdx;
-            } else {
-                clear_w[++clear_w_idx] = operand.regCtxIdx;
-            }
-        }else if (operand.regAccess == QBDI::REGISTER_READ_WRITE){
-            if (IsTaint(operand.regCtxIdx)){
-                taint_rw = operand.regCtxIdx;
-            } else {
-                clear_rw = operand.regCtxIdx;
-            }
-        }
-    }
 
 
 
@@ -360,7 +367,6 @@ void TaintTrace::MemoryTrace(QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRState *
             log_str2 << TAB << disassembler.AnalyzeInst(inst->address)->mnemonic << SPACE;
             log_str2 << PRINT_ADDR(access.accessAddress) << ", "
             <<  RegName(IsValid(taint_r_idx)?taint_r[0]:clear_r[0]) ;
-            // log_str2 << ASM_NOTE;
             log << std::left << std::setw(STR_ALIGN) << log_str2.str();
             log << SPLIT <<  PRINT_ADDR(access.accessAddress) << EQ <<ToHex(access.value);
             log << PRINT_SIZE(access.size);

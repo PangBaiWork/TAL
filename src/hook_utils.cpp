@@ -93,3 +93,11 @@ void HookUtils::empty_on_enter(GumInvocationContext * context,
 void HookUtils::empty_on_leave(GumInvocationContext * context,
                               gpointer user_data) {
 }
+
+
+
+#include <cctype>
+#include <cstdint>
+#include <iomanip>
+#include <ostream>
+#include <algorithm>

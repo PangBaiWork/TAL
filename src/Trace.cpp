@@ -3,7 +3,7 @@
 //
 
 #include "trace.h"
-
+#include "function_utils.h"
 Trace::Trace(const uint64_t base, const PrintMode mode,
              const std::string *path) {
     this->base = base;
@@ -14,12 +14,13 @@ Trace::Trace(const uint64_t base, const PrintMode mode,
     }
     SetOutputPath(path);
 }
-
+#include <boost/core/demangle.hpp>
 QBDI::VMAction Trace::InstTrace(QBDI::VM *vm, QBDI::GPRState *gpr,
                                  QBDI::FPRState *fpr) {
     const QBDI::InstAnalysis *inst = vm->getInstAnalysis(
-        QBDI::ANALYSIS_INSTRUCTION | QBDI::ANALYSIS_SYMBOL |
+        QBDI::ANALYSIS_INSTRUCTION |
              QBDI::ANALYSIS_DISASSEMBLY | QBDI::ANALYSIS_OPERANDS );
+
     if (!inst) return QBDI::CONTINUE;
     CheckAndBreak(inst->address,gpr,fpr);
     uint64_t offset = inst->address - base;
@@ -43,29 +44,121 @@ QBDI::VMAction Trace::InstTrace(QBDI::VM *vm, QBDI::GPRState *gpr,
                 break;
         }
     }
-    AnalysisInstType(inst);
+
     log << std::endl;
-    if (inst->moduleName) {
-        offset = inst->address - GetAndSaveBase(inst->moduleName);
-        log << inst->moduleName << ":";
+    if (modules) {
+        if (const auto module = gum_module_map_find(modules, inst->address);
+            module&&gum_module_get_name(module)) {
+            offset = inst->address - gum_module_get_range(module)->base_address;
+
+            log << gum_module_get_name(module) << ":";
+            }
     }
+
+    AnalysisInstType(inst);
+
+
+
+
+
     if (IsBinMode()) {
         log << PRINT_DATA(reinterpret_cast<uint8_t*>(inst->address),inst->instSize);
     }
     log << BASE_LOG;
     anal.PrintReg(log,gpr,true);
 
-    SetPostInstFlag();
     return QBDI::CONTINUE;
 }
-
+struct Ctx {
+    const char* needle;
+    GumAddress found;
+};
+const char*  invalid_symbol = "invalid_symbol";
 void Trace::PostInstTrace(QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRState *fpr) {
-    if (enable_post_inst) {
-        anal.PrintReg(log,gpr,false);
+    // if (enable_post_inst) {
+    anal.PrintReg(log,gpr,false);
 
-        if (inst_type == CALL&&!IsBinMode()) log << ENTER;
-        CleanPostInstFlag();
+    if ((inst_type == CALL || inst_type == JMP)
+        &&!IsBinMode()&&modules) {
+
+        uint64_t addr = QBDI_GPR_GET(gpr,QBDI::REG_PC);
+        const char* symbol_name = symbols[addr];
+        if (symbol_name==invalid_symbol) return;
+
+        GumModule* module = gum_module_map_find(modules,addr);
+        if (!module) {
+            symbols[addr] = invalid_symbol;
+            return;
+        }
+
+        if (inst_type == JMP&& !symbol_name) {
+            // is plt jmp ? check jmp address module, if not will return
+            const QBDI::InstAnalysis *inst = vm->getInstAnalysis(QBDI::ANALYSIS_INSTRUCTION |
+                                            QBDI::ANALYSIS_DISASSEMBLY | QBDI::ANALYSIS_OPERANDS );
+            GumModule* module_org = gum_module_map_find(modules,inst->address);
+            if (module == module_org) {
+                symbols[addr] = invalid_symbol;
+                return;
+            }
+        }
+        log << ENTER;
+
+        if (gum_module_get_name(module)) {
+            log << "call "<< gum_module_get_name(module) << ":";
+        }else {
+            return;
+        }
+
+        struct Ctx { GumAddress pc; const char* name; std::ofstream* log;} ctx { addr, nullptr ,&log};
+        if (!symbol_name) {
+            // search symbol table
+            gum_module_enumerate_symbols(
+              module,
+              +[](const GumSymbolDetails* e, gpointer user_data) -> gboolean {
+                auto* ctx = (Ctx*) user_data;
+                if (e->name != nullptr && e->address == ctx->pc) {
+                  ctx->name = e->name;
+                  return FALSE;
+                }
+                return TRUE;
+              },
+              &ctx);
+        }
+
+        if (!symbol_name) {
+            // search export table
+            gum_module_enumerate_exports(
+              module,
+              +[](const GumExportDetails* e, gpointer user_data) -> gboolean {
+                auto* ctx = (Ctx*) user_data;
+                if (e->name != nullptr && e->address == ctx->pc) {
+                  ctx->name = e->name;
+                  return FALSE;
+                }
+                return TRUE;
+              },
+              &ctx);
+            symbol_name = ctx.name;
+        }
+
+        // no symbol feedback to offset
+        if (!symbol_name) {
+            auto offset_str = new char [20];
+            sprintf(offset_str,"0x%llx",addr - gum_module_get_range(module)->base_address);
+            symbol_name = offset_str;
+        }
+        symbols[addr]=symbol_name;
+
+        log << symbol_name;
+        if (mode==TRACE_ARGS_MODE) {
+
+            PrintFunctionArgs(log,gpr,symbol_name);
+        }
+        log.flush();
+
     }
+        // CleanPostInstFlag();
+    // }
 }
 
 void Trace::MemoryTrace(QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRState *fpr) {
@@ -117,32 +210,37 @@ bool Trace::SetOutputPath(const std::string *path) {
 }
 
 void Trace::AnalysisInstType(const QBDI::InstAnalysis *inst) {
+
     if (inst->isCall) {
         inst_type = CALL;
     } else if (inst->isReturn) {
         inst_type = RET;
-    } else if (inst->isPredicable && inst->isBranch) {
-        inst_type = IF_JMP;
+    } else if ( inst->isBranch) {
+        inst_type = JMP;
+        if (inst->isPredicable) {
+            inst_type = IF_JMP;
+        }
     } else {
         inst_type = NONE;
     }
 }
 
 uint64_t Trace::GetAndSaveBase(const char *module_name) {
-    uint64_t bais = 0;
-    const auto iter = base_map.find(module_name);
-    if (iter == base_map.end()) {
-        GumModule *mod = gum_process_find_module_by_name(module_name);
-        if (mod) {
-            bais = gum_module_get_range(mod)->base_address;
-            log << "base:" << module_name << "=" << ToHex(bais)
-                    << std::endl;
-            base_map[module_name] = bais;
-        }
-    } else {
-        bais = iter->second;
-    }
-    return bais;
+    // uint64_t bais = 0;
+    // const auto iter = base_map.find(module_name);
+    // if (iter == base_map.end()) {
+    //     GumModule *mod = gum_process_find_module_by_name(module_name);
+    //     if (mod) {
+    //         bais = gum_module_get_range(mod)->base_address;
+    //         log << "base:" << module_name << "=" << ToHex(bais)
+    //                 << std::endl;
+    //         base_map[module_name] = bais;
+    //     }
+    // } else {
+    //     bais = iter->second;
+    // }
+    // return bais;
+    return 0;
 }
 
 bool Trace::IsTaint(const int reg) {
@@ -204,6 +302,7 @@ bool Trace::CheckTaintedStr(const uint64_t addr,std::ofstream& log) {
             LOGE("Insert Taint Memory: %s %d", ptr, len);
             log << std::endl << "Insert Taint Memory: " << ptr << std::endl;
             AddTaintMemory(reinterpret_cast<uint64_t>(ptr), len);
+            delete [] taint_str;
             taint_str = nullptr;
             return true;
         }

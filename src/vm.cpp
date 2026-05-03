@@ -137,6 +137,8 @@ void removeConflictModule(VM &vm) {
             vm.removeInstrumentedRange(modules[i].start, modules[i].end);
         }
     }
+
+
 }
 
 #endif

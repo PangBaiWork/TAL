@@ -22,7 +22,7 @@
 #include <cstdint>
 #endif
 
-#define READABLE_ADDR 0x3000
+
 #define PRINT_GPR(REG) ToHex(QBDI_GPR_GET(gpr, REG))
 #define PRINT_QBDI_REG(reg) \
     (all_log << #reg << ":" << ToHex(state->reg) << ENTER)
@@ -40,21 +40,26 @@ class Trace {
     uint64_t trace_end = 0;
     std::vector<MemoryRange> escape_execute;
     std::vector<MemoryRange> avoid_range;
-    std::map<std::string, uint64_t> base_map;
+    std::unordered_map<std::uint64_t,const char*> symbols;
     RegsState state;
     uint64_t base;
     PrintMode mode = ADDR_MODE;
     std::ofstream log;
     std::ofstream all_log;
     Instruction disassembler;
+    // current instruction type
     InstOprandType inst_type = NONE;
+    // prev instruction type
+    InstOprandType inst_type_prev = NONE;
     bool enable_post_inst = false;
     RegArray reg_name;
     char *taint_str = nullptr;
+    GumModuleMap *modules = nullptr;
     Trace(uint64_t base, PrintMode mode = ADDR_MODE,const std::string *path = nullptr);
     virtual ~Trace() { log.close(); }
     bool SetOutputPath(const std::string *path);
     void SetPostInstFlag() { enable_post_inst = true; }
+    bool GetPostInstFlag() const { return  enable_post_inst; }
     void SetPrivateRunning(const bool running) const {
         GetPrivateRunning(*GetPrivate(*qvm)) = running;
     }

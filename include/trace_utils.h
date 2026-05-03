@@ -166,16 +166,18 @@ enum PrintMode {
     DEBUG_MODE = 2,
     TRACE_MODE = 3,
     TRITON_MODE = 4,
+    TRACE_ARGS_MODE = 5,
 };
 inline std::unordered_map<PrintMode, std::string> ModeName = {
     {ADDR_MODE, "addr"},   {BIN_MODE, "bin"},       {DEBUG_MODE, "debug"},
-    {TRACE_MODE, "trace"}, {TRITON_MODE, "triton"},
+    {TRACE_MODE, "trace"}, {TRITON_MODE, "triton"},{TRACE_ARGS_MODE,"trace_args"}
 };
 enum RegAccess { WRITE, READ, READ_WRITE };
 enum InstOprandType {
     NONE,
     CALL,
     RET,
+    JMP,
     IF_JMP,  // for loop jmp
 };
 

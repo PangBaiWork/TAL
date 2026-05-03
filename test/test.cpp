@@ -6,6 +6,7 @@
 #include "library.h"
 #include <iostream>
 #include <stdint.h>
+#include <signal.h>
 #include "frida-gum.h"
 
 // 容易魔改
@@ -73,19 +74,22 @@ void simulate_movups_instruction() {
 }
 #endif
 void reg_jmp_test() {
-    int i=0;
-    int sum=0;
-    for (;i<0x114;i++) {
-        sum+=i;
-    }
+    // int i=0;
+    // int sum=0;
+    // for (;i<0x114;i++) {
+    //     sum+=i;
+    // }
 }
+#include <stdlib.h>
+#include <string.h>
 void free_test() {
-  for (int i=0;i<100;i++) {
+    int i =0;
+  // for (int i=0;i<100;i++) {
     unsigned char* ptr = (unsigned char*)malloc(200+i);
     if (ptr) {
       free(ptr);
     }
-  }
+  // }
 }
 void memcpy_test() {
   unsigned char source[0x200]="1";
@@ -166,7 +170,6 @@ int end() {
 
 
 
-
 #include "taint_analyze.h"
 int main()
 {
@@ -179,13 +182,15 @@ int main()
     unsigned char flag[17]="1145144444441111";
     unsigned char key[16]="11111111";
 
-
+    if (gum_memory_is_readable ((gconstpointer) 0x28, 1)) {
+        LOGE("can read");
+    };
 
     //printf("%p",btea);
     // taint_trace((void*)&btea,1,(uint64_t)flag,16,2);
     // setbuf(stdout, NULL);
     // taint_trace_str((uint64_t)&btea,1,(char*)flag,TRACE_MODE);
-    trace((uint64_t)&btea,(uint64_t)time_test,1,TRACE_MODE);
+    trace((uint64_t)&btea,(uint64_t)time_test,1,DEBUG_MODE);
 
     // add_taint_range((uint64_t)flag,16);
     set_taint_str((char*)flag);

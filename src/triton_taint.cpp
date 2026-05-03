@@ -41,8 +41,15 @@ void TritonTaint::NeedConcreteMemoryValueCB(triton::Context& ctx, const triton::
  }
 
 
+uint64_t trunc_bytes(uint64_t value, uint32_t n) {
+    if (n > 8) return value;  // 超过8字节直接返回
+    uint64_t mask = (n == 8) ? ~0ULL : (1ULL << (n * 8)) - 1;
+    return value & mask;
+}
+
 void TritonTaint::NeedConcreteRegisterValueCB(
      triton::Context& ctx, const triton::arch::Register& reg) {
+     // LOGE("reg size %d",reg.getSize());
      auto id = reg.getParent();
 
 #if defined(__x86_64__) || defined(_M_X64)
@@ -60,7 +67,7 @@ void TritonTaint::NeedConcreteRegisterValueCB(
          return;
      }
      uint64_t value = QBDI_GPR_GET(gpr_state,GetQRegIdx(id));
-     ctx.setConcreteRegisterValue(ctx.getRegister(id),value);
+     ctx.setConcreteRegisterValue(ctx.getRegister(id),trunc_bytes(value,reg.getSize()));
      // LOGI("need %s  pid:%d qid:%d ret %llx",reg.getName().c_str(),id,qt_map[id],value);
      // LOGI("get %s id: %d",gpr_state.,reg.getId());
  }
@@ -101,16 +108,38 @@ QBDI::VMAction TritonTaint::InstTrace(QBDI::VM *vm,QBDI::GPRState *gpr, QBDI::FP
     // ctx.getSymbolicRegister();
     // ctx.liftToPython()
     ctx.disassembly(instruction);
-    for (auto& operand:instruction.operands) {
-        if (operand.getType() == triton::arch::operand_e::OP_REG
-               && !ctx.isRegisterTainted(operand.getRegister())) {
-                    ClearTaintReg(GetQRegIdx(operand.getRegister().getParent()));
-                }
+
+
+    // for (auto& operand:instruction.operands) {
+    //
+    //     if (operand.getType() == triton::arch::operand_e::OP_REG
+    //            && !ctx.isRegisterTainted(operand.getRegister())) {
+    //                 ClearTaintReg(GetQRegIdx(operand.getRegister().getParent()));
+    //
+    //             }
+    // }
+    for(int16_t idx = 0;idx < inst->numOperands;idx++) {
+        const QBDI::OperandAnalysis &operand = inst->operands[idx];
+        if (operand.type==QBDI::OPERAND_GPR) {
+            ClearTaintReg(operand.regCtxIdx);
+
+            // if (operand.regName[0]=='G') {
+            //     LOGE("idx %d",operand.regCtxIdx);
+            // }
+        } else if (operand.type==QBDI::OPERAND_SEG) {
+            if ((operand.regName[0]=='F'&&operand.regName[1]=='S')||
+                (operand.regName[0]=='G'&&operand.regName[1]=='S')) {
+                Process(instruction);
+                return QBDI::CONTINUE;
+            }
+        }
+
     }
+
     bool tainted = Process(instruction);
     if (taint_str) {
         for (auto& operand:instruction.operands) {
-            if (operand.getType() == triton::arch::operand_e::OP_MEM) {
+            if (operand.getType() == triton::arch::operand_e::OP_MEM&&inst->loadSize) {
                 if (CheckTaintedStr(operand.getMemory().getAddress(),log)) {
                     tainted = Process(instruction);
                     break;
@@ -137,7 +166,7 @@ QBDI::VMAction TritonTaint::InstTrace(QBDI::VM *vm,QBDI::GPRState *gpr, QBDI::FP
                         log << SPACE << PRINT_ADDR(operand.getMemory().getAddress());
                         log << PRINT_SIZE(operand.getMemory().getSize()) << SPLIT;
                     }
-                    CheckTaintedStr(operand.getMemory().getAddress(),log);
+                    // CheckTaintedStr(operand.getMemory().getAddress(),log);
                     break;
                 default:
                     break;
@@ -149,7 +178,7 @@ QBDI::VMAction TritonTaint::InstTrace(QBDI::VM *vm,QBDI::GPRState *gpr, QBDI::FP
 }
 
 void TritonTaint::PostInstTrace(QBDI::VM *vm,QBDI::GPRState *gpr, QBDI::FPRState *fpr) {
-    if (enable_post_inst) {
+    if (GetPostInstFlag()) {
         anal.PrintReg(log,gpr, false);
         log << ENTER;
         if (inst_type == CALL) log << ENTER;
