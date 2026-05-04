@@ -12,9 +12,10 @@ Trace::Trace(const uint64_t base, const PrintMode mode,
     if (IsBinMode()) {
         printable_size = 0;
     }
+    LOGI("Mode %s Init", ModeName[mode].c_str());
     SetOutputPath(path);
 }
-#include <boost/core/demangle.hpp>
+
 QBDI::VMAction Trace::InstTrace(QBDI::VM *vm, QBDI::GPRState *gpr,
                                  QBDI::FPRState *fpr) {
     const QBDI::InstAnalysis *inst = vm->getInstAnalysis(
