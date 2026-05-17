@@ -91,7 +91,7 @@ void Trace::PostInstTrace(QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRState *fpr
         // }
         const char* symbol_name = symbols[addr];
         if (symbol_name==invalid_symbol) return;
-        gum_module_map_find(modules, addr);
+        // gum_module_map_find(modules, addr);
         GumModule* module = gum_module_map_find(modules,addr);
         if (!module) {
             symbols[addr] = invalid_symbol;

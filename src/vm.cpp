@@ -60,9 +60,16 @@ VMAction transferCall(VMInstanceRef vm, const VMState *state,
     tracer->guest_stack.RestoreStack();
     Instruction disassembler;
     tracer->log.flush();
-    if (tracer->mode==DEBUG_MODE)
-        tracer->log << "transfer call " << ToHex(QBDI_GPR_GET(gprState, REG_PC)) <<":"<< disassembler.Disassemble(QBDI_GPR_GET(gprState, REG_PC)) << std::endl;
+    if (tracer->mode==DEBUG_MODE) {
+        uint64_t addr = QBDI_GPR_GET(gprState, REG_PC);
+        tracer->log << "\ntransfer call " << ToHex(addr) <<":"<< disassembler.Disassemble(addr) << std::endl;
+        GumModule* module = gum_module_map_find(tracer->modules,addr);
+        if (module) {
+            tracer->log << "call " <<gum_module_get_name(module)<<":"
+            << ToHex(addr-gum_module_get_range(module)->base_address)<< std::endl;
+        }
 
+    }
     return CONTINUE;
 }
 
@@ -70,12 +77,12 @@ VMAction basicBlockNew(VMInstanceRef vm, const VMState *state,
                       GPRState *gprState, FPRState *fprState, void *data) {
     auto tracer = static_cast<Trace *>(data);
 
-    if (tracer->mode == TRACE_ARGS_MODE) {
-        bool removed = tracer->qvm->removeInstrumentedModuleFromAddr(QBDI_GPR_GET(gprState, REG_PC));
-        if (removed) {
-            tracer->qvm->addInstrumentedModuleFromAddr(QBDI_GPR_GET(gprState, REG_PC));
-        }
-    }
+    // if (tracer->mode == TRACE_ARGS_MODE) {
+    //     bool removed = tracer->qvm->removeInstrumentedModuleFromAddr(QBDI_GPR_GET(gprState, REG_PC));
+    //     if (removed) {
+    //         tracer->qvm->addInstrumentedModuleFromAddr(QBDI_GPR_GET(gprState, REG_PC));
+    //     }
+    // }
     return CONTINUE;
 }
 
@@ -97,7 +104,7 @@ std::shared_ptr<VM> init(void *address, Trace *tracer) {
     if (tracer->mode != TRITON_MODE) {
         qvm->addMemAccessCB(MEMORY_READ_WRITE, memWRAccess, tracer, -10);
     }
-
+    qvm->enableBlacklistMode(true);
     if (tracer->trace_all) {
         qvm->instrumentAllExecutableMaps();
         for (const MemoryRange &range : tracer->avoid_range) {
@@ -143,7 +150,9 @@ void removeConflictModule(VM &vm) {
              StrStrIA(modules[i].name, "user32") ||
              StrStrIA(modules[i].name, "uxtheme") ||
              StrStrIA(modules[i].name, "vcruntime") ||
-             StrStrIA(modules[i].name, "win32u") || modules[i].name[0] == 0)) {
+             StrStrIA(modules[i].name, "win32u")
+             // || modules[i].name[0] == 0
+             )) {
             vm.removeInstrumentedRange(modules[i].start, modules[i].end);
         }
     }
@@ -166,7 +175,9 @@ void removeConflictModule(VM &vm) {
              strstr(modules[i].name, "ld-2.") ||
              strstr(modules[i].name, "ld-linux-") ||
              strstr(modules[i].name, "libpthread-") ||
-             strstr(modules[i].name, "libcofi") || modules[i].name[0] == 0)) {
+             strstr(modules[i].name, "libcofi")
+             // || modules[i].name[0] == 0
+             )) {
             // LOGD("removeConflictModule: %s %llx %llx", modules[i].name,
             //      modules[i].start, modules[i].end);
             vm.removeInstrumentedRange(modules[i].start, modules[i].end);
@@ -196,8 +207,9 @@ void removeConflictModule(VM &vm) {
              strstr(modules[i].name, "libc++.so") ||
              strstr(modules[i].name, "libc.so") ||
              strstr(modules[i].name, "liblog.so") ||
-             strstr(modules[i].name, "libGLESv1_CM.so") ||
-             modules[i].name[0] == 0)) {
+             strstr(modules[i].name, "libGLESv1_CM.so")
+             // ||modules[i].name[0] == 0
+             )) {
             // LOGD("removeConflictModule: %s", modules[i].name);
             vm.removeInstrumentedRange(modules[i].start, modules[i].end);
         }
