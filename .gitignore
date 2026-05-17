@@ -1,5 +1,6 @@
 cmake-build-visualstudio
 cmake-build-windows-visualstudio
+cmake-build-android
 libs
 kit
 *.exe
@@ -7,5 +8,5 @@ kit
 *.so
 .idea
 third_party
-qbdi-src\.idea
-release
+qbdi-src
+Release
