@@ -30,6 +30,22 @@ VMAction postInstruction(VM *vm, GPRState *gprState, FPRState *fprState,
                          void *data) {
     auto tracer = static_cast<Trace *>(data);
     tracer->PostInstTrace(vm, gprState, fprState);
+    // if (tracer->mode == TRACE_ARGS_MODE) {
+    //     auto& engine_ptr = GetPrivate(*tracer->qvm);
+    //     auto& execBroker_ptr = GetPrivate(*engine_ptr);
+    //     if (!execBroker_ptr->isInstrumented(QBDI_GPR_GET(gprState, REG_PC))) {
+    //         // is jit range change ? if so, update instrumented module
+    //
+    //         // execBroker_ptr->removeInstrumentedRange(execBroker_ptr->getInstrumentedRange())
+    //         const QBDI::InstAnalysis *inst = vm->getInstAnalysis(QBDI::ANALYSIS_INSTRUCTION |
+    //                             QBDI::ANALYSIS_DISASSEMBLY | QBDI::ANALYSIS_OPERANDS );
+    //         bool removed = tracer->qvm->removeInstrumentedModuleFromAddr(inst->address);
+    //         if (removed) {
+    //             tracer->qvm->addInstrumentedModuleFromAddr(inst->address);
+    //         }
+    //     }
+    // }
+
     return CONTINUE;
 }
 VMAction memWRAccess(VM *vm, GPRState *gprState, FPRState *fprState,
@@ -42,6 +58,24 @@ VMAction transferCall(VMInstanceRef vm, const VMState *state,
                       GPRState *gprState, FPRState *fprState, void *data) {
     auto tracer = static_cast<Trace *>(data);
     tracer->guest_stack.RestoreStack();
+    Instruction disassembler;
+    tracer->log.flush();
+    if (tracer->mode==DEBUG_MODE)
+        tracer->log << "transfer call " << ToHex(QBDI_GPR_GET(gprState, REG_PC)) <<":"<< disassembler.Disassemble(QBDI_GPR_GET(gprState, REG_PC)) << std::endl;
+
+    return CONTINUE;
+}
+
+VMAction basicBlockNew(VMInstanceRef vm, const VMState *state,
+                      GPRState *gprState, FPRState *fprState, void *data) {
+    auto tracer = static_cast<Trace *>(data);
+
+    if (tracer->mode == TRACE_ARGS_MODE) {
+        bool removed = tracer->qvm->removeInstrumentedModuleFromAddr(QBDI_GPR_GET(gprState, REG_PC));
+        if (removed) {
+            tracer->qvm->addInstrumentedModuleFromAddr(QBDI_GPR_GET(gprState, REG_PC));
+        }
+    }
     return CONTINUE;
 }
 
@@ -59,6 +93,7 @@ std::shared_ptr<VM> init(void *address, Trace *tracer) {
     qvm->addCodeCB(POSTINST, postInstruction, tracer, 10);
     qvm->addVMEventCB(EXEC_TRANSFER_CALL, transferCall, tracer);
     qvm->addVMEventCB(EXEC_TRANSFER_RETURN, transferRet, tracer);
+    qvm->addVMEventCB(BASIC_BLOCK_NEW,basicBlockNew, tracer);
     if (tracer->mode != TRITON_MODE) {
         qvm->addMemAccessCB(MEMORY_READ_WRITE, memWRAccess, tracer, -10);
     }
@@ -122,7 +157,7 @@ void removeConflictModule(VM &vm) {
     size_t size;
     qbdi_MemoryMap *modules = qbdi_getCurrentProcessMaps(false, &size);
     for (size_t i = 0; i < size; i++) {
-        LOGD("module:%s", modules[i].name);
+        // LOGD("module:%s", modules[i].name);
         if (
             // (modules[i].permission & QBDI_PF_EXEC) &&
             (strstr(modules[i].name, "libc-2.") ||
@@ -132,8 +167,8 @@ void removeConflictModule(VM &vm) {
              strstr(modules[i].name, "ld-linux-") ||
              strstr(modules[i].name, "libpthread-") ||
              strstr(modules[i].name, "libcofi") || modules[i].name[0] == 0)) {
-            LOGD("removeConflictModule: %s %llx %llx", modules[i].name,
-                 modules[i].start, modules[i].end);
+            // LOGD("removeConflictModule: %s %llx %llx", modules[i].name,
+            //      modules[i].start, modules[i].end);
             vm.removeInstrumentedRange(modules[i].start, modules[i].end);
         }
     }
@@ -163,7 +198,7 @@ void removeConflictModule(VM &vm) {
              strstr(modules[i].name, "liblog.so") ||
              strstr(modules[i].name, "libGLESv1_CM.so") ||
              modules[i].name[0] == 0)) {
-            LOGD("removeConflictModule: %s", modules[i].name);
+            // LOGD("removeConflictModule: %s", modules[i].name);
             vm.removeInstrumentedRange(modules[i].start, modules[i].end);
         }
     }

@@ -60,7 +60,10 @@ static void on_enter(GumInvocationContext* context,gpointer user_data) {
     Trace *tracer = data->tracer;
     void *address = context->function;
     tracer->modules = gum_module_map_new();
-
+    //is log set ?
+    if (!tracer->log.is_open()) {
+        tracer->SetOutputPath(nullptr);
+    }
     gum_interceptor_detach(data->interceptor, data->listener);
     gum_interceptor_unignore_current_thread(data->interceptor);
     if(tracer->IsDebugMode()){
@@ -109,6 +112,7 @@ static void on_enter(GumInvocationContext* context,gpointer user_data) {
 
 C_EXPORT void trace(const uint64_t addr, const uint64_t end, const bool all,
                     int mode) {
+    setvbuf(stdout, NULL, _IONBF, 0);
     LOGI("hooking %lx", addr);
     GumModule *module = gum_process_find_module_by_address(addr);
     uint64_t base_addr = 0;

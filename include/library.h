@@ -31,9 +31,9 @@
         "[%s:%d] " fmt, __FUNCTION__, __LINE__, ##__VA_ARGS__)
 #else
 #define LOGD(fmt, ...) fprintf(stdout, fmt "\n", ##__VA_ARGS__)
-#define LOGI(fmt, ...) fprintf(stdout, "[TTD INFO] " fmt "\n", ##__VA_ARGS__)
-#define LOGW(fmt, ...) fprintf(stdout, "[TTD WARN] " fmt "\n", ##__VA_ARGS__)
-#define LOGE(fmt, ...) fprintf(stderr, "[TTD ERROR] " fmt "\n", ##__VA_ARGS__)
+#define LOGI(fmt, ...) fprintf(stdout, "[TAL INFO] " fmt "\n", ##__VA_ARGS__)
+#define LOGW(fmt, ...) fprintf(stdout, "[TAL WARN] " fmt "\n", ##__VA_ARGS__)
+#define LOGE(fmt, ...) fprintf(stderr, "[TAL ERROR] " fmt "\n", ##__VA_ARGS__)
 #endif
 
 
@@ -48,6 +48,7 @@ C_EXPORT void add_resume(const uint64_t resume_addr);
 C_EXPORT bool set_printable_size(int size);
 C_EXPORT bool set_taint_str(const char *str);
 C_EXPORT bool set_triton(int mode);
+C_EXPORT void set_function_print(int argc,int hexdump_size);
  void init_main();
 
 #endif // LIBRARY_H
