@@ -239,35 +239,47 @@ void print_qbdi_reg(QBDI::GPRState *state) {
 #endif
 
 
-
-void Hexdump(std::ostream& os, const void* data, size_t size, uintptr_t base ) {
+void Hexdump(std::ostream& os, const void* data, size_t size, uintptr_t base) {
     constexpr size_t width = 16;
+
     const auto* p = static_cast<const unsigned char*>(data);
 
     for (size_t i = 0; i < size; i += width) {
         size_t n = std::min(width, size - i);
 
-        os << std::hex << std::setw(16) << std::setfill('0')
-           << (base + i) << "  ";
+        os << std::hex
+           << std::right
+           << std::setw(sizeof(uintptr_t) * 2)
+           << std::setfill('0')
+           << (base + i)
+           << "  ";
 
         for (size_t j = 0; j < width; ++j) {
             if (j < n) {
-                os << std::setw(2) << static_cast<unsigned>(p[i + j]) << ' ';
+                os << std::setw(2)
+                   << std::setfill('0')
+                   << std::hex
+                   << static_cast<unsigned>(p[i + j])
+                   << ' ';
             } else {
                 os << "   ";
             }
 
-            if (j == 7) os << ' ';
+            if (j == 7)
+                os << ' ';
         }
 
         os << " |";
 
         for (size_t j = 0; j < n; ++j) {
             unsigned char c = p[i + j];
-            os << (std::isprint(static_cast<unsigned char>(c)) ? static_cast<char>(c) : '.');
+
+            os << (std::isprint(c) ? static_cast<char>(c) : '.');
         }
 
-        os << "|\n";
+        os << '|';
+
+        os << '\n';
     }
 
     os << std::dec << std::setfill(' ');

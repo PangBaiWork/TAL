@@ -20,7 +20,7 @@
 #include <android/log.h>
 #include <sys/resource.h>
 #include <unistd.h>
-#define LOG_TAG "NativeTrace"
+#define LOG_TAG "TAL"
 #define LOGD(fmt, ...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, \
         "[%s:%d] " fmt, __FUNCTION__, __LINE__, ##__VA_ARGS__)
 #define LOGI(fmt, ...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, \

@@ -19,8 +19,7 @@ Trace::Trace(const uint64_t base, const PrintMode mode,
 QBDI::VMAction Trace::InstTrace(QBDI::VM *vm, QBDI::GPRState *gpr,
                                  QBDI::FPRState *fpr) {
     const QBDI::InstAnalysis *inst = vm->getInstAnalysis(
-        QBDI::ANALYSIS_INSTRUCTION |
-             QBDI::ANALYSIS_DISASSEMBLY | QBDI::ANALYSIS_OPERANDS );
+        QBDI::ANALYSIS_INSTRUCTION|QBDI::ANALYSIS_DISASSEMBLY|QBDI::ANALYSIS_OPERANDS);
 
     if (!inst) return QBDI::CONTINUE;
     CheckAndBreak(inst->address,gpr,fpr);
@@ -72,10 +71,7 @@ QBDI::VMAction Trace::InstTrace(QBDI::VM *vm, QBDI::GPRState *gpr,
     // log .flush();
     return QBDI::CONTINUE;
 }
-struct Ctx {
-    const char* needle;
-    GumAddress found;
-};
+
 const char*  invalid_symbol = "invalid_symbol";
 void Trace::PostInstTrace(QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRState *fpr) {
     // if (enable_post_inst) {
@@ -114,7 +110,7 @@ void Trace::PostInstTrace(QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRState *fpr
             log << ENTER;
         }
         if (gum_module_get_name(module)) {
-            log << "call "<< gum_module_get_name(module) << ":";
+            log << "call  "<< gum_module_get_name(module) << ":";
         }else {
             return;
         }
@@ -167,11 +163,11 @@ void Trace::PostInstTrace(QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRState *fpr
         symbols[addr]=symbol_name;
 
         log << symbol_name;
+        log << " base:" << ToHex(gum_module_get_range(module)->base_address) << "\n";
         if (mode==TRACE_ARGS_MODE) {
-
-            PrintFunctionArgs(log,gpr,symbol_name);
+            PrintFunctionArgs(log,gpr,readable_memory,symbol_name);
         }
-        log.flush();
+        // log.flush();
 
     }
 

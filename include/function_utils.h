@@ -6,6 +6,6 @@
 #define FUNCTION_UTILS_H
 #include "trace.h"
 void PrintFunctionArgs(std::ostream& os,
-                              QBDI::GPRState* gpr,
+                              QBDI::GPRState* gpr,GumMemoryMap* map,
                               const std::string& raw_symbol_name);
 #endif //FUNCTION_UTILS_H

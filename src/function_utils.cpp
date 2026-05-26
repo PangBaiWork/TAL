@@ -15,6 +15,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include "sparse_bitmap.h"
 
 namespace {
 
@@ -240,24 +241,6 @@ static ArgCountResult GuessArgCount(const std::string& raw_symbol,
     return result;
 }
 
-static bool ReadStackArg64(uint64_t addr, uint64_t& out) {
-    out = 0;
-
-    if (addr == 0) {
-        return false;
-    }
-
-    const auto* p = reinterpret_cast<gconstpointer>(
-        static_cast<uintptr_t>(addr)
-    );
-
-    if (!gum_memory_is_readable(p, sizeof(uint64_t))) {
-        return false;
-    }
-
-    out = *reinterpret_cast<const uint64_t*>(p);
-    return true;
-}
 static std::vector<uint64_t> GetAbiArgs64(QBDI::GPRState* gpr,
                                           size_t wanted_argc) {
     std::vector<uint64_t> args;
@@ -345,30 +328,82 @@ static std::vector<uint64_t> GetAbiArgs64(QBDI::GPRState* gpr,
         return args;
     }
 
-    const uint64_t sp = static_cast<uint64_t>(
-        QBDI_GPR_GET(gpr, QBDI::REG_SP)
-    );
+    const uint64_t sp = QBDI_GPR_GET(gpr, QBDI::REG_SP);
 
     for (size_t i = reg_count; i < wanted_argc; ++i) {
         uint64_t value = 0;
-
         const uint64_t stack_addr =
-            sp +
-            static_cast<uint64_t>(stack_skip_slots + (i - reg_count)) *
+            sp + (stack_skip_slots + (i - reg_count)) *
             sizeof(uint64_t);
-
-        if (!ReadStackArg64(stack_addr, value)) {
-            args.push_back(0);
-            continue;
-        }
-
+        value =  *reinterpret_cast<const uint64_t*>(stack_addr);
         args.push_back(value);
     }
 
     return args;
 }
 
-static bool TryReadablePointer(uint64_t raw, size_t size, uint64_t& clean) {
+
+
+#include <unistd.h>
+#include <fcntl.h>
+#include <stdint.h>
+#include <stdio.h>
+uint64_t fastVmPages() {
+    static int fd = open("/proc/self/statm", O_RDONLY);
+
+    char buf[32];
+
+    lseek(fd, 0, SEEK_SET);
+
+    ssize_t n = read(fd, buf, sizeof(buf));
+
+    if (n <= 0)
+        return 0;
+
+    uint64_t v = 0;
+
+    for (ssize_t i = 0; i < n; ++i) {
+        char c = buf[i];
+
+        if ((unsigned)(c - '0') > 9)
+            break;
+
+        v = v * 10 + (c - '0');
+    }
+
+    return v;
+}
+uint64_t vm_size=0;
+//SparseBitmap blacklist;
+bool IsMemoryReadable(const void* addr, GumMemoryMap* map) {
+
+    GumMemoryRange range;
+
+    range.base_address = reinterpret_cast<uint64_t>(addr);
+    range.size=0;
+    if (gum_memory_map_contains(map,&range)) {
+        return true;
+    }
+#if defined(_WIN64)
+    if (gum_memory_is_readable(addr,1)) {
+        gum_memory_map_update(map);
+        return true;
+    }
+#else
+    uint64_t size = fastVmPages();
+    if (size != vm_size) {
+        LOGE("update maps");
+        vm_size = size;
+        gum_memory_map_update(map);
+        return gum_memory_map_contains(map,&range);
+    }
+#endif
+
+
+    return false;
+}
+
+bool TryReadablePointer(uint64_t raw, size_t size, uint64_t& clean,GumMemoryMap* map) {
     clean = raw;
 
     if (raw == 0) {
@@ -380,7 +415,8 @@ static bool TryReadablePointer(uint64_t raw, size_t size, uint64_t& clean) {
             static_cast<uintptr_t>(value)
         );
 
-        if (gum_memory_is_readable(p, size)) {
+
+        if (IsMemoryReadable(p, map)) {
             clean = value;
             return true;
         }
@@ -419,13 +455,13 @@ static bool TryReadablePointer(uint64_t raw, size_t size, uint64_t& clean) {
     return false;
 }
 
-static void PrintOneArg(std::ostream& os, size_t index, uint64_t value) {
+void PrintOneArg(std::ostream& os, size_t index, uint64_t value,GumMemoryMap* map) {
     os << "arg[" << index << "] = 0x"
        << std::hex << value << std::dec;
 
     uint64_t clean = 0;
 
-    if (TryReadablePointer(value, ARG_HEXDUMP_SIZE, clean)) {
+    if (TryReadablePointer(value, ARG_HEXDUMP_SIZE, clean,map)) {
         if (clean != value) {
             os << " -> 0x" << std::hex << clean << std::dec;
         }
@@ -446,14 +482,13 @@ static void PrintOneArg(std::ostream& os, size_t index, uint64_t value) {
 } // namespace
 
 void PrintFunctionArgs(std::ostream& os,
-                       QBDI::GPRState* gpr,
+                       QBDI::GPRState* gpr,GumMemoryMap* map,
                        const std::string& raw_symbol_name) {
     std::string demangled;
     const ArgCountResult count = GuessArgCount(raw_symbol_name, demangled);
 
     const auto abi_args = GetAbiArgs64(gpr, static_cast<size_t>(count.argc));
 
-    os << "\n";
     os << "demangled : " << demangled << "\n";
     os << "argc      : " << count.argc;
 
@@ -467,6 +502,6 @@ void PrintFunctionArgs(std::ostream& os,
     os << "\n";
 
     for (size_t i = 0; i < abi_args.size(); ++i) {
-        PrintOneArg(os, i, abi_args[i]);
+        PrintOneArg(os, i, abi_args[i],map);
     }
 }

@@ -60,6 +60,7 @@ static void on_enter(GumInvocationContext* context,gpointer user_data) {
     Trace *tracer = data->tracer;
     void *address = context->function;
     tracer->modules = gum_module_map_new();
+    tracer->readable_memory = gum_memory_map_new(GUM_PAGE_READ);
     //is log set ?
     if (!tracer->log.is_open()) {
         tracer->SetOutputPath(nullptr);

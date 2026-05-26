@@ -55,8 +55,10 @@ class Trace {
     InstOprandType inst_type_prev = NONE;
     bool enable_post_inst = false;
     RegArray reg_name;
+
     char *taint_str = nullptr;
     GumModuleMap *modules = nullptr;
+    GumMemoryMap *readable_memory = nullptr;
     Trace(uint64_t base, PrintMode mode = ADDR_MODE,const std::string *path = nullptr);
     virtual ~Trace() { log.close(); }
     bool SetOutputPath(const std::string *path);
@@ -90,7 +92,7 @@ class Trace {
 
     void PrintMemoryOp(QBDI::MemoryAccess& access,std::string& printable) {
         const char *op_str = nullptr;
-        if (access.type==QBDI::MEMORY_READ) {
+        if (access.type == QBDI::MEMORY_READ) {
             op_str = " R";
         }else if (access.type==QBDI::MEMORY_WRITE) {
             op_str = " W";

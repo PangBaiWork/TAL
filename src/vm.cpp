@@ -104,7 +104,8 @@ std::shared_ptr<VM> init(void *address, Trace *tracer) {
     if (tracer->mode != TRITON_MODE) {
         qvm->addMemAccessCB(MEMORY_READ_WRITE, memWRAccess, tracer, -10);
     }
-    qvm->enableBlacklistMode(true);
+
+    // qvm->enableBlacklistMode(true);
     if (tracer->trace_all) {
         qvm->instrumentAllExecutableMaps();
         for (const MemoryRange &range : tracer->avoid_range) {
@@ -196,7 +197,8 @@ void removeConflictModule(VM &vm) {
     qbdi_MemoryMap *modules = qbdi_getCurrentProcessMaps(false, &size);
     for (size_t i = 0; i < size; i++) {
         //    LOGD("module:%s",modules[i].name);
-        if ((modules[i].permission & QBDI_PF_EXEC) &&
+        if (
+                (modules[i].permission & QBDI_PF_EXEC) &&
             (strstr(modules[i].name, "libart.so") ||
              strstr(modules[i].name, "libEGL.so") ||
              strstr(modules[i].name, "linker") ||
@@ -207,7 +209,8 @@ void removeConflictModule(VM &vm) {
              strstr(modules[i].name, "libc++.so") ||
              strstr(modules[i].name, "libc.so") ||
              strstr(modules[i].name, "liblog.so") ||
-             strstr(modules[i].name, "libGLESv1_CM.so")
+             strstr(modules[i].name, "libGLESv1_CM.so")||
+             strstr(modules[i].name,"boot.oat")
              // ||modules[i].name[0] == 0
              )) {
             // LOGD("removeConflictModule: %s", modules[i].name);

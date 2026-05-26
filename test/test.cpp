@@ -84,7 +84,7 @@ void reg_jmp_test() {
 #include <string.h>
 void free_test() {
     int i =0;
-  for (int i=0;i<100;i++) {
+  for (int i=0;i<10000;i++) {
     unsigned char* ptr = (unsigned char*)malloc(200+i);
     if (ptr) {
       free(ptr);
