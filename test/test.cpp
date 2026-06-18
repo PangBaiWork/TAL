@@ -164,6 +164,14 @@ void btea(uint32_t * v, int n, uint32_t const key[4]) {
 int end() {
     return  0xdeadbeef;
 }
+int nop() {
+    return  0xdeadbeaf;
+}
+void test_crash(void) {
+    volatile char * p = (volatile char *) (uintptr_t) 0;
+    *p = 1;
+}
+
 #include <stdio.h>
 
 
@@ -199,11 +207,13 @@ int main()
     // add_escape((uint64_t)end,(uint64_t)0);
     LOGD("test begin");
     btea((uint32_t*)flag,4,(uint32_t*)key);
+
     free_test();
     memcpy_test();
     time_test();
     LOGD("test finish");
     end();
+    test_crash();
     exit(0);
     return  114514;
 }

@@ -59,7 +59,7 @@ VMAction transferCall(VMInstanceRef vm, const VMState *state,
     auto tracer = static_cast<Trace *>(data);
     tracer->guest_stack.RestoreStack();
     Instruction disassembler;
-    tracer->log.flush();
+    //  tracer->log.flush();
     if (tracer->mode==DEBUG_MODE) {
         uint64_t addr = QBDI_GPR_GET(gprState, REG_PC);
         tracer->log << "\ntransfer call " << ToHex(addr) <<":"<< disassembler.Disassemble(addr) << std::endl;
@@ -105,7 +105,7 @@ std::shared_ptr<VM> init(void *address, Trace *tracer) {
         qvm->addMemAccessCB(MEMORY_READ_WRITE, memWRAccess, tracer, -10);
     }
 
-    // qvm->enableBlacklistMode(true);
+    qvm->enableBlacklistMode(true);
     if (tracer->trace_all) {
         qvm->instrumentAllExecutableMaps();
         for (const MemoryRange &range : tracer->avoid_range) {

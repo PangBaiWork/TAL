@@ -13,27 +13,27 @@ void TaintTrace::PrintMemoryOp(QBDI::GPRState* gpr,uint64_t offset,QBDI::MemoryA
     std::ostringstream log_str;
 
     std::string mem_op = "[" + ToHex(memoryAccess->accessAddress) + "] ";
-    std::string tmp;
+    std::ostringstream tmp;
     if (IsAddrMode()||IsDebugMode())
     {
-        tmp +=  PRINT_OFFSET(offset);
+        tmp <<  PRINT_OFFSET(offset);
     }
-    tmp += MOV;
+    tmp << MOV;
     if (IsValid(reg_w)){
-        tmp += RegName(reg_w);
-        tmp += ", ";
-        tmp += mem_op;
+        tmp << RegName(reg_w);
+        tmp << ", ";
+        tmp << mem_op;
 
-        log_str << std::left << std::setw(STR_ALIGN) << tmp;
+        log_str << std::left << std::setw(STR_ALIGN) << tmp.str();
         log_str << SPLIT;
         log_str << TName(reg_w) << EQ << ToHex(memoryAccess->value);
         log_str << PRINT_SIZE(memoryAccess->size);
         log_str << ENTER;
     } else {
-        tmp += mem_op;
-        tmp += ", ";
-        tmp += RegName(rRegIdx);
-        log_str << std::left << std::setw(STR_ALIGN) << tmp;
+        tmp << mem_op;
+        tmp << ", ";
+        tmp << RegName(rRegIdx);
+        log_str << std::left << std::setw(STR_ALIGN) << tmp.str();
         log_str << TName(rRegIdx)  << EQ << ToHex(memoryAccess->value);
         log_str << PRINT_SIZE(memoryAccess->size);
         log_str << SPLIT ENTER;

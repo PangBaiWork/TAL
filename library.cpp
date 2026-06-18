@@ -2,10 +2,11 @@
 #pragma check_stack(off)
 #include "library.h"
 
-#include "QBDI.h"
-#include "triton_taint.h"
+#include <csignal>
 
+#include "QBDI.h"
 #include "hook_utils.h"
+#include "triton_taint.h"
 #include "utils.h"
 #include "vm.h"
 
@@ -50,9 +51,79 @@ void on_resume(GumInvocationContext *context, gpointer user_data) {
 Trace *cur_tracer = nullptr;
 char *g_taint_str = nullptr;
 
+
+
+typedef struct _GumEhCtx
+{
+    GumBacktracer * backtracer;
+    Trace * tracer;
+} GumEhCtx;
+
+
+static gboolean
+gum_on_exception_print_backtrace (GumExceptionDetails * details,
+                                  gpointer user_data)
+{
+    GumEhCtx * ctx = (GumEhCtx *) user_data;
+
+    LOGE("Exception caught by TAL:");
+    ctx->tracer->log << "Exception caught by TAL:" << std::endl;
+    {
+        gchar * s = gum_exception_details_to_string (details);
+        LOGE("%s", s);
+        ctx->tracer->log << s << std::endl;
+        g_free (s);
+    }
+
+    {
+        GumReturnAddressArray addrs;
+
+        gum_backtracer_generate_with_limit (ctx->backtracer,&details->context, &addrs, 16);
+        LOGE("backtrace size:%d",addrs.len+1);
+
+        PrintSymbolOffset(details->address, ctx->tracer->log);
+        for (guint i = 0; i != addrs.len; i++)
+        {
+            gpointer addr = addrs.items[i];
+
+            PrintSymbolOffset(addr,ctx->tracer->log);
+        }
+    }
+    return FALSE;
+}
+
+ GumExceptor *install_exception_handler (Trace * tracer)
+{
+    LOGI("init exception_handler");
+    GumExceptor * exceptor;
+    GumEhCtx * ctx;
+
+    // gum_init_embedded ();
+
+    exceptor = gum_exceptor_obtain ();
+    if (exceptor == NULL)
+    {
+        LOGE("Failed to obtain exceptor!");
+        return NULL;
+    }
+
+
+    ctx = g_new0 (GumEhCtx, 1);
+    ctx->tracer = tracer;
+#if defined(__aarch64__)
+    ctx->backtracer = gum_backtracer_make_fuzzy();
+#else
+   ctx->backtracer = gum_backtracer_make_accurate ();
+    if (ctx->backtracer == NULL)
+        ctx->backtracer = gum_backtracer_make_fuzzy ();
+#endif
+    gum_exceptor_add (exceptor, gum_on_exception_print_backtrace, ctx);
+
+    return exceptor;
+}
 static void on_enter(GumInvocationContext* context,gpointer user_data) {
     LOGI("call on_enter");
-    print_frida_reg(context->cpu_context);
+    // print_frida_reg(context->cpu_context);
     uint64_t tid = gum_process_get_current_thread_id();
 
     LOGI("thread id:%llu",tid);
@@ -108,13 +179,13 @@ static void on_enter(GumInvocationContext* context,gpointer user_data) {
     // broken stack ignore
 
 }
-
-
-
+std::unordered_set<uint64_t> addr_set;
 C_EXPORT void trace(const uint64_t addr, const uint64_t end, const bool all,
                     int mode) {
+    if (!addr_set.insert(addr).second) return;
     setvbuf(stdout, NULL, _IONBF, 0);
     LOGI("hooking %lx", addr);
+
     GumModule *module = gum_process_find_module_by_address(addr);
     uint64_t base_addr = 0;
 
@@ -133,6 +204,8 @@ C_EXPORT void trace(const uint64_t addr, const uint64_t end, const bool all,
         cur_tracer->trace_all = all;
         cur_tracer->trace_end = end;
     }
+
+    install_exception_handler(cur_tracer);
 
     HookUtils::gum_attach(reinterpret_cast<void *>(addr), on_enter,
                           cur_tracer);
@@ -209,6 +282,11 @@ C_EXPORT bool set_triton(int mode) {
 
 C_INIT void init_main() {
     gum_init_embedded();
+    //gum_exceptor_try()
+    // std::signal(SIGSEGV, signal_handler);
+    // std::signal(SIGABRT, signal_handler);
+    // std::signal(SIGFPE, signal_handler);
+    // std::signal(SIGILL, signal_handler);
     LOGE("load gum ok");
 }
 

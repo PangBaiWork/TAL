@@ -148,8 +148,9 @@ QBDI::VMAction TritonTaint::InstTrace(QBDI::VM *vm,QBDI::GPRState *gpr, QBDI::FP
         }
     }
     if (tainted) {
-
-        log << std::left << std::setw(STR_ALIGN) << PRINT_OFFSET(offset) + inst->disassembly;
+        std::ostringstream oss;
+        oss <<  PRINT_OFFSET(offset) << inst->disassembly;
+        log << std::left << std::setw(STR_ALIGN) << oss.str();
         anal.PrintReg(log, gpr, true);
         SetPostInstFlag();
         for (auto& operand:instruction.operands) {

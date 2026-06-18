@@ -26,7 +26,8 @@
 #define PRINT_GPR(REG) ToHex(QBDI_GPR_GET(gpr, REG))
 #define PRINT_QBDI_REG(reg) \
     (all_log << #reg << ":" << ToHex(state->reg) << ENTER)
-#define BASE_LOG std::left << std::setw(STR_ALIGN) << PRINT_OFFSET(offset) + inst->disassembly;
+
+#define BASE_LOG std::left << std::setw(STR_ALIGN) << (std::ostringstream() << PRINT_OFFSET(offset) << inst->disassembly).str();
 
 
 class Trace {

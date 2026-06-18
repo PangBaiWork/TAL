@@ -34,7 +34,6 @@ GumInvocationListener *HookUtils::gum_attach(void* addr, GumInvocationCallback o
     auto listener = gum_make_call_listener(on_enter,empty_on_leave, data, nullptr);
     data->listener = listener;
     data->interceptor = interceptor;
-
     gum_interceptor_attach(interceptor,addr,listener, nullptr,GUM_ATTACH_FLAGS_UNIGNORABLE);
     gum_interceptor_end_transaction(interceptor);
     return listener;

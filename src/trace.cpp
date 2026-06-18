@@ -47,12 +47,10 @@ QBDI::VMAction Trace::InstTrace(QBDI::VM *vm, QBDI::GPRState *gpr,
     }
 
     log << ENTER;
-        // std::endl;
     if (modules) {
         if (const auto module = gum_module_map_find(modules, inst->address);
             module&&gum_module_get_name(module)) {
             offset = inst->address - gum_module_get_range(module)->base_address;
-
             log << gum_module_get_name(module) << ":";
             }
     }
@@ -263,6 +261,7 @@ bool Trace::IsTaint(const int reg) {
     return state.IsTaintReg(reg);
 }
 
+
 bool Trace::CheckAndBreak(uint64_t addr, const QBDI::GPRState *gpr,
                                      QBDI::FPRState *fpr) {
     bool need_break = false;
@@ -281,9 +280,17 @@ bool Trace::CheckAndBreak(uint64_t addr, const QBDI::GPRState *gpr,
         auto& engine_ptr = GetPrivate(*qvm);
         auto& execBroker_ptr = GetPrivate(*engine_ptr);
         auto& transferBlock = GetPrivate(*execBroker_ptr);
+        // print_qbdi_reg(gpr);
         transferBlock->getContext()->gprState = *gpr;
         transferBlock->getContext()->fprState = *fpr;
+
+#if defined(QBDI_ARCH_AARCH64)
+        auto& archData = GetPrivateArchData(*execBroker_ptr);
+        transferBlock->selectSeq(archData.transfertLR.seqID);
+        transferBlock->getContext()->hostState.brokerAddr = addr;
+#else
         transferBlock->getContext()->hostState.selector = addr;
+#endif
         guest_stack.RestoreStack();
         transferBlock->run();
     }

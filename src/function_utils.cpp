@@ -221,7 +221,7 @@ static ArgCountResult GuessArgCount(const std::string& raw_symbol,
         demangled = raw_symbol;
         result.argc = DEFAULT_C_ARGC;
         result.used_default = true;
-        result.reason = "c_or_unmangled_symbol";
+        result.reason = "c_symbol";
         return result;
     }
 
@@ -231,7 +231,7 @@ static ArgCountResult GuessArgCount(const std::string& raw_symbol,
     if (parsed_argc < 0) {
         result.argc = DEFAULT_C_ARGC;
         result.used_default = true;
-        result.reason = "demangle_parse_failed";
+        result.reason = "parse_failed";
         return result;
     }
 
@@ -343,7 +343,7 @@ static std::vector<uint64_t> GetAbiArgs64(QBDI::GPRState* gpr,
 }
 
 
-
+#if !defined(_WIN64)
 #include <unistd.h>
 #include <fcntl.h>
 #include <stdint.h>
@@ -374,6 +374,8 @@ uint64_t fastVmPages() {
     return v;
 }
 uint64_t vm_size=0;
+#endif
+
 //SparseBitmap blacklist;
 bool IsMemoryReadable(const void* addr, GumMemoryMap* map) {
 
@@ -392,7 +394,7 @@ bool IsMemoryReadable(const void* addr, GumMemoryMap* map) {
 #else
     uint64_t size = fastVmPages();
     if (size != vm_size) {
-        LOGE("update maps");
+//        LOGE("update maps");
         vm_size = size;
         gum_memory_map_update(map);
         return gum_memory_map_contains(map,&range);

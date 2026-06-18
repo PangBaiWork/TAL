@@ -37,7 +37,7 @@ std::string DataToHex(uint8_t* bytes,int size);
 void syn_reg_gum(GumCpuContext *cpu, QBDI::GPRState *state, bool F2Q);
 int GetSameStrLen(const char *str1, const char *str2);
 void print_frida_reg(GumCpuContext *cpu);
-void print_qbdi_reg(QBDI::GPRState *state);
+void print_qbdi_reg(const QBDI::GPRState *state);
 
 
 #include <boost/context/continuation.hpp>
@@ -119,7 +119,21 @@ std::unique_ptr<QBDI::Engine>& GetPrivate(QBDI::VM&);
 QBDI::ExecBroker*& GetPrivate(QBDI::Engine&);  // 注意：返回的是指针的引用
 std::unique_ptr<QBDI::ExecBlock>& GetPrivate(QBDI::ExecBroker&);
 
+#if defined(QBDI_ARCH_AARCH64)
+template<auto M>
+struct TunnelArchData;
+template<class T, class U, T U::*M>
+struct TunnelArchData<M> {
+    friend T& GetPrivateArchData(U& u) {
+        return u.*M;
+    }
+};
+template struct TunnelArchData<&QBDI::ExecBroker::archData>;
+QBDI::ExecBrokerArchData& GetPrivateArchData(QBDI::ExecBroker&);
+#endif
+
 // Use a dedicated name to avoid overload collisions on GetPrivate.
 bool& GetPrivateRunning(QBDI::Engine&);
 void Hexdump(std::ostream& os, const void* data, size_t size, uintptr_t base = 0);
+void PrintSymbolOffset (gpointer addr,std::ofstream& log);
 #endif //UTILS_H

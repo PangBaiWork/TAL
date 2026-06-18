@@ -17,10 +17,10 @@
 // std::endl
 
 
-#define PRINT_OFFSET(OFFSET) (ToHex(OFFSET) + ":")
-#define PRINT_ADDR(VALUE) ("[" + ToHex(VALUE) + "]")
-#define PRINT_SIZE(SIZE) (" <" + ToHex(SIZE) + "> ")
-#define PRINT_DATA(VALUE,SIZE) ("(" + DataToHex(VALUE,SIZE) + ")")
+#define PRINT_OFFSET(OFFSET) ToHex(OFFSET) << ":"
+#define PRINT_ADDR(VALUE)  "[" << ToHex(VALUE) << "]"
+#define PRINT_SIZE(SIZE)  " <" << ToHex(SIZE) << "> "
+#define PRINT_DATA(VALUE,SIZE) "(" << DataToHex(VALUE,SIZE) << ")"
 
 
 #endif //STR_FORMAT_H

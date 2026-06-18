@@ -10,7 +10,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(BUILD_TESTING ON)
 #set(QBDI_LOG_DEBUG ON)
 set(CMAKE_BUILD_PARALLEL_LEVEL 8)
-set(CMAKE_BUILD_TYPE Debug)
+set(CMAKE_BUILD_TYPE Release)
 set(TARGET_NAME "tal")
 project(${TARGET_NAME})
 
@@ -124,8 +124,6 @@ add_subdirectory(qbdi-src)
 
 
 
-
-set(HOME ${PROJECT_SOURCE_DIR})
 include_directories(
         ${CMAKE_CURRENT_SOURCE_DIR}/Triton/src/libtriton/includes
 )
@@ -141,10 +139,6 @@ add_library(${TARGET_NAME} SHARED
         library.cpp
 )
 #target_compile_options(${TARGET_NAME} PRIVATE -mstackrealign)
-add_library(${TARGET_NAME}_static STATIC
-        ${FILE_SOURCES}
-        library.cpp
-)
 
 
 
@@ -162,14 +156,29 @@ set_target_properties(frida-gum PROPERTIES IMPORTED_LOCATION
 
 target_link_options(${TARGET_NAME} PRIVATE -Wl,--exclude-libs=ALL -Wall -Wextra)
 
-target_link_libraries(${TARGET_NAME}_static
 
-        frida-gum
-        qbdi-llvm
-        QBDI_static
-        Boost::context
-        triton
-)
+if (NOT QBDI_PLATFORM STREQUAL "android")
+    add_library(${TARGET_NAME}_static STATIC
+            ${FILE_SOURCES}
+            library.cpp
+    )
+
+    target_link_libraries(${TARGET_NAME}_static
+            frida-gum
+            qbdi-llvm
+            QBDI_static
+            Boost::context
+            triton
+    )
+    add_executable(${TARGET_NAME}_test
+            ${FILE_SOURCES}
+            test/test.cpp
+            )
+    target_link_libraries(${TARGET_NAME}_test
+            ${TARGET_NAME}_static
+            )
+endif ()
+
 
 target_link_libraries(${TARGET_NAME}
         frida-gum
@@ -179,10 +188,7 @@ target_link_libraries(${TARGET_NAME}
         triton
 )
 
-add_executable(${TARGET_NAME}_test
-        ${FILE_SOURCES}
-        test/test.cpp
-)
+
 
 if(QBDI_PLATFORM STREQUAL "windows")
     target_link_libraries(${TARGET_NAME}_test
@@ -194,9 +200,7 @@ if(QBDI_PLATFORM STREQUAL "windows")
 endif ()
 
 
-target_link_libraries(${TARGET_NAME}_test
-        ${TARGET_NAME}_static
-)
+
 add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_SOURCE_DIR}/${CMAKE_BUILD_TYPE}/${QBDI_PLATFORM}"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
