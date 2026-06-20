@@ -64,22 +64,26 @@ static gboolean
 gum_on_exception_print_backtrace (GumExceptionDetails * details,
                                   gpointer user_data)
 {
-    GumEhCtx * ctx = (GumEhCtx *) user_data;
 
+    GumEhCtx * ctx = (GumEhCtx *) user_data;
+    if (details->thread_id != ctx->tracer->tid) return FALSE;
     LOGE("Exception caught by TAL:");
     ctx->tracer->log << "Exception caught by TAL:" << std::endl;
     {
         gchar * s = gum_exception_details_to_string (details);
+
         LOGE("%s", s);
         ctx->tracer->log << s << std::endl;
         g_free (s);
     }
+    print_frida_reg(&details->context);
 
     {
         GumReturnAddressArray addrs;
 
         gum_backtracer_generate_with_limit (ctx->backtracer,&details->context, &addrs, 16);
         LOGE("backtrace size:%d",addrs.len+1);
+
 
         PrintSymbolOffset(details->address, ctx->tracer->log);
         for (guint i = 0; i != addrs.len; i++)
@@ -124,9 +128,10 @@ gum_on_exception_print_backtrace (GumExceptionDetails * details,
 static void on_enter(GumInvocationContext* context,gpointer user_data) {
     LOGI("call on_enter");
     // print_frida_reg(context->cpu_context);
-    uint64_t tid = gum_process_get_current_thread_id();
+    cur_tracer->tid = gum_process_get_current_thread_id();
 
-    LOGI("thread id:%llu",tid);
+    LOGI("thread id:%llu",cur_tracer->tid);
+    install_exception_handler(cur_tracer);
     const auto data = static_cast<CallbackData *>(user_data);
     Trace *tracer = data->tracer;
     void *address = context->function;
@@ -137,7 +142,7 @@ static void on_enter(GumInvocationContext* context,gpointer user_data) {
         tracer->SetOutputPath(nullptr);
     }
     gum_interceptor_detach(data->interceptor, data->listener);
-    gum_interceptor_unignore_current_thread(data->interceptor);
+    //  gum_interceptor_unignore_current_thread(data->interceptor);
     if(tracer->IsDebugMode()){
         QBDI::setLogPriority(QBDI::DEBUG);
         QBDI::setLogFile( "log.asm", true);
@@ -158,9 +163,9 @@ static void on_enter(GumInvocationContext* context,gpointer user_data) {
     // qvm->setOptions(QBDI::OPT_ENABLE_FS_GS);
 #elif defined(__aarch64__)
     int nice_value = -19;  // 最高优先级
-    if (setpriority(PRIO_PROCESS, tid,nice_value ) != 0) {
+    if (setpriority(PRIO_PROCESS, cur_tracer->tid,nice_value ) != 0) {
        LOGE("setpriority failed: tid=%d nice=%d err=%d (%s)",
-                            (int)tid, nice_value, errno, strerror(errno));
+                            (int)cur_tracer->tid, nice_value, errno, strerror(errno));
     }
 #endif
 
@@ -205,7 +210,7 @@ C_EXPORT void trace(const uint64_t addr, const uint64_t end, const bool all,
         cur_tracer->trace_end = end;
     }
 
-    install_exception_handler(cur_tracer);
+
 
     HookUtils::gum_attach(reinterpret_cast<void *>(addr), on_enter,
                           cur_tracer);

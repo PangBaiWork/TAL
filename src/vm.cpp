@@ -205,12 +205,15 @@ void removeConflictModule(VM &vm) {
              strstr(modules[i].name, "libart-compiler.so") ||
              strstr(modules[i].name, "libnativehelper.so") ||
              strstr(modules[i].name, "libandroid_runtime.so") ||
+             strstr(modules[i].name, "libandroidfw.so") ||
+             strstr(modules[i].name, "libandroid.so") ||
              strstr(modules[i].name, "libbinder.so") ||
              strstr(modules[i].name, "libc++.so") ||
+             strstr(modules[i].name, "libc++_shared.so") ||
              strstr(modules[i].name, "libc.so") ||
              strstr(modules[i].name, "liblog.so") ||
              strstr(modules[i].name, "libGLESv1_CM.so")||
-             strstr(modules[i].name,"boot.oat")
+             strstr(modules[i].name, ".oat")
              // ||modules[i].name[0] == 0
              )) {
             // LOGD("removeConflictModule: %s", modules[i].name);

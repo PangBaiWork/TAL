@@ -21,7 +21,7 @@ void HookUtils::gum_replace(void* addr, void* replace, Trace* tracer, void** bac
     auto ret = gum_interceptor_replace(interceptor,addr,replace, data,backup);
     gum_interceptor_end_transaction(interceptor);
     gum_interceptor_flush(interceptor);
-    LOGI("HOOK REPLACE:   %d",ret);
+    LOGI("HOOK REPLACE:  %d",ret);
 }
 
 GumInvocationListener *HookUtils::gum_attach(void* addr, GumInvocationCallback on_enter, Trace* tracer){

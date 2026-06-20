@@ -9,6 +9,7 @@
 #include "QBDI/State.h"
 #include "frida-gum.h"
 #include "str_format.h"
+#include "trace_utils.h"
 
 // #include "trace.h"
 std::string ToHex(uint64_t value) {
@@ -106,7 +107,7 @@ void StackInfo::RestoreStack(){};
 
 
 
-#define PRINT_REG(reg) LOGI(#reg "_F:%llx,", cpu->reg)
+#define PRINT_REG(reg) LOGE(#reg "_F:%llx,", cpu->reg)
 #define PRINT_QBDI_REG(reg) LOGI(#reg "_Q:%llx,", state->reg)
 #if defined(__x86_64__) || defined(_M_X64)
 // X86_64
@@ -227,8 +228,8 @@ void syn_reg_gum(GumCpuContext *cpu, QBDI::GPRState *state, bool F2Q) {
 
 
 void print_frida_reg(GumCpuContext *cpu) {
-    for (int i = 0; i < 18; i++) {
-        PRINT_REG(x[i]);
+    for (int i = 0; i < 29; i++) {
+        LOGE("x%d_F:%llx,",i, cpu->x[i]);
     }
     PRINT_REG(sp);
 }
@@ -291,7 +292,7 @@ void Hexdump(std::ostream& os, const void* data, size_t size, uintptr_t base) {
 }
 
 
-
+Instruction disassembler;
 void PrintSymbolOffset (gpointer addr,std::ofstream& log)
 {
     GumModule * m = gum_process_find_module_by_address (GUM_ADDRESS (addr));
@@ -300,8 +301,8 @@ void PrintSymbolOffset (gpointer addr,std::ofstream& log)
         GumAddress base = gum_module_get_range (m)->base_address;
         GumAddress off = GUM_ADDRESS (addr) - base;
 
-        LOGE(TAB "%s!0x%" G_GSIZE_MODIFIER "x",gum_module_get_name (m),(gsize) off);
-        log << TAB <<(char*) gum_module_get_name (m) << "!" << ToHex(off) << std::endl;
+        LOGE(TAB "%s!0x%" G_GSIZE_MODIFIER "x" " :%s",gum_module_get_name (m),(gsize) off,disassembler.Disassemble((uintptr_t)addr).c_str());
+        log << TAB <<(char*) gum_module_get_name (m) << "!" << ToHex(off)<< " :"<<disassembler.Disassemble((uintptr_t)addr)<< std::endl;
         g_object_unref (m);
     }
     else

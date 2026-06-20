@@ -36,6 +36,7 @@ class Trace {
     std::shared_ptr<BorrowedStackAllocator> stack;
     StackInfo guest_stack;
     StackInfo host_stack;
+    uint64_t tid;
     std::shared_ptr<QBDI::VM> qvm;
     bool trace_all = false;
     uint64_t trace_end = 0;

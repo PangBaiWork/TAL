@@ -16,7 +16,7 @@ project(${TARGET_NAME})
 
 if(CMAKE_HOST_SYSTEM_NAME MATCHES "Linux")
     set(QBDI_PLATFORM "linux")
-    message("current platform: Linux ")
+    message("current platform: Linux")
     # 在项目最顶层，所有 add_subdirectory / FetchContent 之前设置
     set(CMAKE_POSITION_INDEPENDENT_CODE ON CACHE BOOL "" FORCE)
 
