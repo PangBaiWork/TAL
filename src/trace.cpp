@@ -4,10 +4,17 @@
 
 #include "trace.h"
 #include "function_utils.h"
-Trace::Trace(const uint64_t base, const PrintMode mode,
+Trace::Trace(const uint64_t addr, const PrintMode mode,
              const std::string *path) {
-    this->base = base;
+    GumModule *module = gum_process_find_module_by_address(addr);
+    uint64_t base_addr = 0;
+    if (module&&gum_module_get_range(module)) {
+        base_addr = gum_module_get_range(module)->base_address;
+    }
+    LOGI("Base:%lx", base_addr);
+    this->base = base_addr;
     this->mode = mode;
+    this->start_offset = addr - base_addr;
     reg_name.SetGPRArray(QBDI::GPR_NAMES, state);
     if (IsBinMode()) {
         printable_size = 0;
@@ -215,7 +222,7 @@ bool Trace::SetOutputPath(const std::string *path) {
         log.close();
         log.clear();
     }
-    auto log_file = *path + ModeName[mode] + ".asm";
+    auto log_file = *path+ ToHex(start_offset) + "_" + ModeName[mode] + ".asm";
     LOGI("set log path: %s", log_file.c_str());
     log.open(log_file.c_str(), std::ios::out | std::ios::trunc);
     return log.is_open();

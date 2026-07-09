@@ -37,6 +37,7 @@ class Trace {
     StackInfo guest_stack;
     StackInfo host_stack;
     uint64_t tid;
+    uint64_t start_offset;
     std::shared_ptr<QBDI::VM> qvm;
     bool trace_all = false;
     uint64_t trace_end = 0;

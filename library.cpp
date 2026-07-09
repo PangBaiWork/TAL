@@ -125,23 +125,32 @@ gum_on_exception_print_backtrace (GumExceptionDetails * details,
 
     return exceptor;
 }
+std::unordered_set<uint64_t> addr_set;
 static void on_enter(GumInvocationContext* context,gpointer user_data) {
     LOGI("call on_enter");
-    // print_frida_reg(context->cpu_context);
-    cur_tracer->tid = gum_process_get_current_thread_id();
-
-    LOGI("thread id:%llu",cur_tracer->tid);
-    install_exception_handler(cur_tracer);
-    const auto data = static_cast<CallbackData *>(user_data);
-    Trace *tracer = data->tracer;
     void *address = context->function;
+    if (addr_set.erase((uint64_t)address)==0) {
+        LOGI("already traced %llx",address);
+        return;
+    }
+    // print_frida_reg(context->cpu_context);
+
+
+    const auto data = static_cast<CallbackData *>(user_data);
+    gum_interceptor_detach(data->interceptor, data->listener);
+
+    Trace *tracer = data->tracer;
+
+    tracer->tid = gum_process_get_current_thread_id();
+    LOGI("thread id:%llu",tracer->tid);
+    install_exception_handler(tracer);
     tracer->modules = gum_module_map_new();
     tracer->readable_memory = gum_memory_map_new(GUM_PAGE_READ);
     //is log set ?
     if (!tracer->log.is_open()) {
         tracer->SetOutputPath(nullptr);
     }
-    gum_interceptor_detach(data->interceptor, data->listener);
+
     //  gum_interceptor_unignore_current_thread(data->interceptor);
     if(tracer->IsDebugMode()){
         QBDI::setLogPriority(QBDI::DEBUG);
@@ -184,27 +193,21 @@ static void on_enter(GumInvocationContext* context,gpointer user_data) {
     // broken stack ignore
 
 }
-std::unordered_set<uint64_t> addr_set;
+
 C_EXPORT void trace(const uint64_t addr, const uint64_t end, const bool all,
                     int mode) {
     if (!addr_set.insert(addr).second) return;
     setvbuf(stdout, NULL, _IONBF, 0);
     LOGI("hooking %lx", addr);
 
-    GumModule *module = gum_process_find_module_by_address(addr);
-    uint64_t base_addr = 0;
 
-    if (module) {
-        base_addr = gum_module_get_range(module)->base_address;
-    }
-    LOGI("Base:%lx", base_addr);
     if (!cur_tracer) {
         if (mode == TRITON_MODE) {
-            cur_tracer = new TritonTaint(base_addr, static_cast<PrintMode>(mode));
+            cur_tracer = new TritonTaint(addr, static_cast<PrintMode>(mode));
         } else if (mode == TRACE_MODE || mode == DEBUG_MODE||mode == BIN_MODE||mode== TRACE_ARGS_MODE) {
-            cur_tracer = new Trace(base_addr, static_cast<PrintMode>(mode));
+            cur_tracer = new Trace(addr, static_cast<PrintMode>(mode));
         } else if (mode == ADDR_MODE) {
-            cur_tracer = new TaintTrace(base_addr, static_cast<PrintMode>(mode));
+            cur_tracer = new TaintTrace(addr, static_cast<PrintMode>(mode));
         }
         cur_tracer->trace_all = all;
         cur_tracer->trace_end = end;
@@ -258,8 +261,6 @@ C_EXPORT bool set_log_path(const char *path) {
 }
 
 C_EXPORT bool set_taint_str(const char *str) {
-    g_taint_str = new char[strlen(str) + 1];
-    strcpy(g_taint_str, str);
     if (cur_tracer){
         cur_tracer->SetTaintStr(g_taint_str);
         return true;
