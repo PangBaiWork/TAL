@@ -1,12 +1,49 @@
-cmake-build-visualstudio
-cmake-build-windows-visualstudio
-cmake-build-android
-libs
-kit
-*.exe
-*.dll
+# IDE
+.idea/
+.vscode/
+
+# Build directories
+/build/
+/build-*/
+/cmake-build-*/
+/Debug/
+/artifacts/
+
+# Generated binaries and local build artifacts
+*.o
+*.obj
+*.a
+*.lib
 *.so
-.idea
-third_party
-qbdi-src
-Release
+*.dll
+*.dylib
+*.exe
+*.pdb
+*.ilk
+*.exp
+*.apk
+
+# Vendored fragments: ignore by default, then opt in to the pieces needed
+# for reproducible source builds.
+/third_party/*
+!/third_party/boost-lite/
+!/third_party/boost-lite/**
+!/third_party/frida-capstone/
+!/third_party/frida-capstone/**
+!/third_party/android/
+/third_party/android/*
+!/third_party/android/frida/
+!/third_party/android/frida/**
+!/third_party/linux/
+/third_party/linux/*
+!/third_party/linux/frida/
+!/third_party/linux/frida/**
+!/third_party/windows/
+/third_party/windows/*
+!/third_party/windows/frida/
+!/third_party/windows/frida/**
+
+# Frida Gum static libraries are tracked with Git LFS.
+!/libs/
+!/libs/frida-gum/
+!/libs/frida-gum/**

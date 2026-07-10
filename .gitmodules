@@ -1,0 +1,11 @@
+[submodule "Triton"]
+	path = Triton
+	url = https://gh-proxy.com/https://github.com/JonathanSalwan/Triton.git
+[submodule "Release"]
+	path = Release
+	url = https://github.com/PangBaiWork/TraceAnyLoc.git
+	ignore = dirty
+[submodule "qbdi-src"]
+	path = qbdi-src
+	url = https://github.com/PangBaiWork/QBDI.git
+	ignore = dirty

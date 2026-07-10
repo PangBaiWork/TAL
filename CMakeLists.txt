@@ -1,210 +1,204 @@
-﻿
-
-
 cmake_minimum_required(VERSION 3.22.1)
 
+project(tal LANGUAGES C CXX)
 
-set(QBDI_ARCH "X86_64")
+set(TARGET_NAME "tal")
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(BUILD_TESTING ON)
-#set(QBDI_LOG_DEBUG ON)
-set(CMAKE_BUILD_PARALLEL_LEVEL 8)
-set(CMAKE_BUILD_TYPE Release)
-set(TARGET_NAME "tal")
-project(${TARGET_NAME})
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-if(CMAKE_HOST_SYSTEM_NAME MATCHES "Linux")
-    set(QBDI_PLATFORM "linux")
-    message("current platform: Linux")
-    # 在项目最顶层，所有 add_subdirectory / FetchContent 之前设置
-    set(CMAKE_POSITION_INDEPENDENT_CODE ON CACHE BOOL "" FORCE)
-
-    # 强制全局 fPIC（兜底）
-
-    set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS} -fPIC")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
-
-    if (CMAKE_BUILD_TYPE MATCHES "Release")
-        
-
-    set(CMAKE_C_FLAGS_RELEASE "-Os")
-    set(CMAKE_CXX_FLAGS_RELEASE "-Os")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -ffunction-sections -fdata-sections -fvisibility=hidden -fno-asynchronous-unwind-tables -fno-unwind-tables")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ffunction-sections -fdata-sections -fvisibility=hidden -fno-asynchronous-unwind-tables -fno-unwind-tables")
-
-    add_link_options(
-            -Wl,--gc-sections
-            -Wl,--strip-all
-            -flto=auto
-    )
-    endif ()
-
-elseif(CMAKE_HOST_SYSTEM_NAME MATCHES "Windows")
-    set(QBDI_PLATFORM "windows")
-    message("current platform: Windows ")
-    enable_language(ASM)
-    enable_language(ASM_MASM)
-else()
-    message("current platform: unkonw ")
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
-if(ANDROID OR CMAKE_SYSTEM_NAME STREQUAL "Android")
-    if(NOT ANDROID_NDK)
-        message(FATAL_ERROR "ANDROID_NDK is not set")
-    endif()
+option(TAL_BUILD_TESTS "Build tal test executable on desktop platforms" OFF)
+option(TAL_COPY_OUTPUT "Copy built library into TAL_OUTPUT_ROOT/<platform>" ON)
+option(TAL_ENABLE_LTO "Enable link-time optimization for tal release builds" OFF)
+option(TAL_STRIP_RELEASE "Strip tal release binaries after linking on ELF/Mach-O targets" ON)
+set(TAL_OUTPUT_ROOT
+    "${CMAKE_CURRENT_SOURCE_DIR}/artifacts"
+    CACHE PATH "Directory for copied tal build outputs")
+
+set(BUILD_TESTING OFF CACHE BOOL "Disable dependency tests" FORCE)
+set(CMAKE_SKIP_INSTALL_RULES ON CACHE BOOL "Skip install metadata for vendored dependencies" FORCE)
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Android" OR ANDROID)
+    set(TAL_PLATFORM "android")
+    set(TAL_PLATFORM_DEFINITION "TAL_PLATFORM_ANDROID=1")
     set(QBDI_PLATFORM "android")
-    message("current platform: android ")
-    set(CMAKE_CROSSCOMPILING TRUE)
     set(QBDI_ARCH "AARCH64")
-
-    message(STATUS "NDK version: ${ANDROID_NDK_VERSION}")
-    message(STATUS "Android API level: ${ANDROID_PLATFORM}")
+elseif(WIN32)
+    set(TAL_PLATFORM "windows")
+    set(TAL_PLATFORM_DEFINITION "TAL_PLATFORM_WINDOWS=1")
+    set(QBDI_PLATFORM "windows")
+    set(QBDI_ARCH "X86_64")
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(TAL_PLATFORM "linux")
+    set(TAL_PLATFORM_DEFINITION "TAL_PLATFORM_LINUX=1")
+    set(QBDI_PLATFORM "linux")
+    set(QBDI_ARCH "X86_64")
+else()
+    message(FATAL_ERROR "Unsupported target platform: ${CMAKE_SYSTEM_NAME}")
 endif()
 
+message(STATUS "tal target platform: ${TAL_PLATFORM}")
+message(STATUS "QBDI target: ${QBDI_PLATFORM}/${QBDI_ARCH}")
 
-
-if(CMAKE_BUILD_TYPE STREQUAL "Release")
-    set(CMAKE_C_VISIBILITY_PRESET hidden)
-    set(CMAKE_CXX_VISIBILITY_PRESET hidden)
-    set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
+if(MSVC)
+    cmake_host_system_information(RESULT TAL_CPU_COUNT QUERY NUMBER_OF_LOGICAL_CORES)
 endif()
 
+enable_language(ASM)
+if(WIN32)
+    enable_language(ASM_MASM)
+endif()
 
-include_directories(
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/
-        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/${QBDI_PLATFORM}/frida
-        ${CMAKE_CURRENT_SOURCE_DIR}/boost-1.90.0/libs/context/include
-        ${CMAKE_CURRENT_SOURCE_DIR}/qbdi-src/src
-        #        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/${QBDI_PLATFORM}
-)
-set(Boost_USE_STATIC_LIBS ON) # 使用静态库
-set(BOOST_INCLUDE_LIBRARIES context multiprecision)
-add_subdirectory(boost-1.90.0)
+if(TAL_PLATFORM STREQUAL "windows")
+    set(FRIDA_LIB_NAME "frida-gum.lib")
+else()
+    set(FRIDA_LIB_NAME "libfrida-gum.a")
+endif()
 
+set(TAL_FRIDA_GUM_LIBRARY
+    "${CMAKE_CURRENT_SOURCE_DIR}/libs/frida-gum/${TAL_PLATFORM}/${FRIDA_LIB_NAME}"
+    CACHE FILEPATH "Path to platform frida-gum static library")
 
-set(Z3_INTERFACE OFF)
-set(BOOST_INTERFACE OFF)
+if(NOT EXISTS "${TAL_FRIDA_GUM_LIBRARY}")
+    message(FATAL_ERROR "frida-gum library not found: ${TAL_FRIDA_GUM_LIBRARY}")
+endif()
+
+add_library(frida-gum STATIC IMPORTED GLOBAL)
+set_target_properties(frida-gum PROPERTIES
+    IMPORTED_LOCATION "${TAL_FRIDA_GUM_LIBRARY}")
+
+set(TAL_BOOST_ROOT
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/boost-lite"
+    CACHE PATH "Path to the Boost source tree used by tal")
+add_subdirectory("${TAL_BOOST_ROOT}" "${CMAKE_CURRENT_BINARY_DIR}/boost-lite")
+
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build vendored dependencies as static libraries" FORCE)
+set(BUILD_EXAMPLES OFF CACHE BOOL "Disable Triton examples" FORCE)
+set(ENABLE_TEST OFF CACHE BOOL "Disable Triton tests" FORCE)
+set(PYTHON_BINDINGS OFF CACHE BOOL "Disable Triton Python bindings" FORCE)
+set(PYTHON_BINDINGS_AUTOCOMPLETE OFF CACHE BOOL "Disable Triton autocomplete generation" FORCE)
+set(Z3_INTERFACE OFF CACHE BOOL "Disable Triton Z3 interface" FORCE)
+set(BOOST_INTERFACE OFF CACHE BOOL "Disable Triton Boost interface" FORCE)
+
+set(CAPSTONE_INCLUDE_DIRS
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/frida-capstone"
+    CACHE PATH "Frida-bundled Capstone compatibility include directory for Triton" FORCE)
+set(CAPSTONE_LIBRARIES frida-gum CACHE STRING "Frida-gum provides Capstone symbols for Triton" FORCE)
+set(CAPSTONE_VERSION_HEADER
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/${TAL_PLATFORM}/frida/frida-gum.h"
+    CACHE FILEPATH "Frida-bundled Capstone version header for Triton" FORCE)
 
 add_subdirectory(Triton)
+target_include_directories(triton
+    PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/${TAL_PLATFORM}/frida")
+target_compile_definitions(triton PRIVATE "${TAL_PLATFORM_DEFINITION}")
 
-
-if(QBDI_PLATFORM STREQUAL "windows")
-    message(STATUS "Windows")
-    add_compile_options("$<$<C_COMPILER_ID:MSVC>:/utf-8>")
-    add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")
-
-    set(FRIDA_LIB "frida-gum.lib")
-    set(QBDI_LIB "QBDI_static.lib")
-    set(CMAKE_CROSSCOMPILING "FALSE")
-
-
-    # set(CMAKE_CXX_FLAGS_RELEASE " -DNDEBUG")
-    # windows 并行编译选项
-
-    cmake_host_system_information(RESULT CPU_NUMBER_OF_LOGICAL_CORES QUERY NUMBER_OF_LOGICAL_CORES)
-    add_compile_options($<$<CXX_COMPILER_ID:MSVC>:/MP${CPU_NUMBER_OF_LOGICAL_CORES}>)
-
-
-    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /Z7")
-    set(CMAKE_SHARED_LINKER_FLAGS_DEBUG "${CMAKE_SHARED_LINKER_FLAGS_DEBUG} /DEBUG:FULL")
-
-
-else(QBDI_PLATFORM STREQUAL "linux" OR QBDI_PLATFORM STREQUAL "android")
-    message(STATUS "Linux or Android")
-    set(FRIDA_LIB "libfrida-gum.a")
-    set(QBDI_LIB "libQBDI.a")
-    set(CMAKE_CXX_FLAGS_RELEASE "-flto -fomit-frame-pointer -funroll-loops -fno-stack-protector")
-endif()
-
-
-add_compile_definitions(ULTRA_FAST_MODE=1)
-
+set(QBDI_SHARED_LIBRARY OFF CACHE BOOL "Skip unused QBDI shared library target" FORCE)
+set(QBDI_TEST OFF CACHE BOOL "Skip unused QBDI tests" FORCE)
+set(QBDI_BENCHMARK OFF CACHE BOOL "Skip unused QBDI benchmarks" FORCE)
+set(QBDI_EXAMPLES OFF CACHE BOOL "Skip unused QBDI examples" FORCE)
+set(QBDI_TOOLS_QBDIPRELOAD OFF CACHE BOOL "Skip unused QBDIPreload tool" FORCE)
+set(QBDI_TOOLS_VALIDATOR OFF CACHE BOOL "Skip unused QBDI validator tool" FORCE)
+set(QBDI_TOOLS_PYQBDI OFF CACHE BOOL "Skip unused PyQBDI bindings" FORCE)
+set(QBDI_TOOLS_FRIDAQBDI OFF CACHE BOOL "Skip unused frida-qbdi install target" FORCE)
+set(QBDI_INCLUDE_DOCS OFF CACHE BOOL "Skip unused QBDI docs" FORCE)
+set(QBDI_INCLUDE_PACKAGE OFF CACHE BOOL "Skip unused QBDI package target" FORCE)
+set(QBDI_INSTALL OFF CACHE BOOL "Skip unused QBDI install metadata" FORCE)
 add_subdirectory(qbdi-src)
 
-
-
-include_directories(
-        ${CMAKE_CURRENT_SOURCE_DIR}/Triton/src/libtriton/includes
-)
-
-FILE(GLOB_RECURSE FILE_SOURCES
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/*.c*
-)
-
-message("Variable value: ${FILE_SOURCES}")
+file(GLOB_RECURSE FILE_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cxx")
 
 add_library(${TARGET_NAME} SHARED
-        ${FILE_SOURCES}
-        library.cpp
-)
-#target_compile_options(${TARGET_NAME} PRIVATE -mstackrealign)
+    ${FILE_SOURCES}
+    library.cpp)
 
+function(tal_configure_library target)
+    target_include_directories(${target}
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include"
+            "${CMAKE_CURRENT_SOURCE_DIR}/third_party/${TAL_PLATFORM}/frida"
+            "${CMAKE_CURRENT_SOURCE_DIR}/qbdi-src/src"
+            "${CMAKE_CURRENT_SOURCE_DIR}/Triton/src/libtriton/includes")
 
+    target_compile_definitions(${target} PRIVATE ULTRA_FAST_MODE=1 "${TAL_PLATFORM_DEFINITION}")
 
-if(QBDI_PLATFORM STREQUAL "windows")
-    add_compile_definitions(_HAS_STD_BYTE=0)
-endif ()
-
-add_library(frida-gum STATIC IMPORTED)
-set_target_properties(frida-gum PROPERTIES IMPORTED_LOCATION
-        ${CMAKE_CURRENT_SOURCE_DIR}/libs/frida-gum/${QBDI_PLATFORM}/${FRIDA_LIB})
-
-
-
-
-
-target_link_options(${TARGET_NAME} PRIVATE -Wl,--exclude-libs=ALL -Wall -Wextra)
-
-
-if (NOT QBDI_PLATFORM STREQUAL "android")
-    add_library(${TARGET_NAME}_static STATIC
-            ${FILE_SOURCES}
-            library.cpp
-    )
-
-    target_link_libraries(${TARGET_NAME}_static
+    target_link_libraries(${target}
+        PRIVATE
             frida-gum
             qbdi-llvm
             QBDI_static
             Boost::context
-            triton
-    )
+            triton)
+
+    if(MSVC)
+        target_compile_options(${target} PRIVATE /utf-8)
+        if(TAL_CPU_COUNT)
+            target_compile_options(${target} PRIVATE /MP${TAL_CPU_COUNT})
+        endif()
+    else()
+        target_compile_options(${target}
+            PRIVATE
+                -Wall
+                -Wextra
+                $<$<CONFIG:Release>:-Os>
+                $<$<CONFIG:Release>:-fomit-frame-pointer>
+                $<$<CONFIG:Release>:-fno-stack-protector>
+                $<$<CONFIG:Release>:-ffunction-sections>
+                $<$<CONFIG:Release>:-fdata-sections>
+                $<$<CONFIG:Release>:-fvisibility=hidden>
+                $<$<CONFIG:Release>:-fno-asynchronous-unwind-tables>
+                $<$<CONFIG:Release>:-fno-unwind-tables>)
+
+        target_link_options(${target}
+            PRIVATE
+                -Wl,--exclude-libs=ALL
+                $<$<CONFIG:Release>:-Wl,--gc-sections>
+                $<$<AND:$<CONFIG:Release>,$<BOOL:${TAL_STRIP_RELEASE}>>:-Wl,--strip-all>)
+
+        if(TAL_ENABLE_LTO)
+            target_compile_options(${target} PRIVATE $<$<CONFIG:Release>:-flto>)
+            target_link_options(${target} PRIVATE $<$<CONFIG:Release>:-flto=auto>)
+        endif()
+    endif()
+
+    if(TAL_PLATFORM STREQUAL "windows")
+        target_compile_definitions(${target} PRIVATE _HAS_STD_BYTE=0)
+        target_link_libraries(${target} PRIVATE ntdll.lib)
+    endif()
+endfunction()
+
+tal_configure_library(${TARGET_NAME})
+
+if(TAL_BUILD_TESTS AND NOT TAL_PLATFORM STREQUAL "android")
+    add_library(${TARGET_NAME}_static STATIC
+        ${FILE_SOURCES}
+        library.cpp)
+
+    tal_configure_library(${TARGET_NAME}_static)
+
     add_executable(${TARGET_NAME}_test
-            ${FILE_SOURCES}
-            test/test.cpp
-            )
-    target_link_libraries(${TARGET_NAME}_test
-            ${TARGET_NAME}_static
-            )
-endif ()
+        ${FILE_SOURCES}
+        test/test.cpp)
 
+    target_link_libraries(${TARGET_NAME}_test PRIVATE ${TARGET_NAME}_static)
+endif()
 
-target_link_libraries(${TARGET_NAME}
-        frida-gum
-        qbdi-llvm
-        QBDI_static
-        Boost::context
-        triton
-)
-
-
-
-if(QBDI_PLATFORM STREQUAL "windows")
-    target_link_libraries(${TARGET_NAME}_test
-            ntdll.lib
-    )
-    target_link_libraries(${TARGET_NAME}
-            ntdll.lib
-    )
-endif ()
-
-
-
-add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_SOURCE_DIR}/${CMAKE_BUILD_TYPE}/${QBDI_PLATFORM}"
+if(TAL_COPY_OUTPUT)
+    add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+                "${TAL_OUTPUT_ROOT}/${TAL_PLATFORM}"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "$<TARGET_FILE:${TARGET_NAME}>"
-        "${CMAKE_CURRENT_SOURCE_DIR}/${CMAKE_BUILD_TYPE}/${QBDI_PLATFORM}/$<TARGET_FILE_NAME:${TARGET_NAME}>"
-        VERBATIM
-)
+                "$<TARGET_FILE:${TARGET_NAME}>"
+                "${TAL_OUTPUT_ROOT}/${TAL_PLATFORM}/$<TARGET_FILE_NAME:${TARGET_NAME}>"
+        VERBATIM)
+endif()

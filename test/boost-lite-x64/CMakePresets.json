@@ -1,0 +1,39 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 22,
+    "patch": 1
+  },
+  "configurePresets": [
+    {
+      "name": "x64-release",
+      "displayName": "Boost lite x64 Release",
+      "generator": "Ninja",
+      "binaryDir": "../../build/boost-lite-x64-test",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "BOOST_CONTEXT_ARCHITECTURE": "x86_64"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "x64-release",
+      "configurePreset": "x64-release",
+      "targets": [
+        "boost_lite_x64_test"
+      ],
+      "jobs": 8
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "x64-release",
+      "configurePreset": "x64-release",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}
