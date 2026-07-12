@@ -33,17 +33,9 @@ else()
 endif()
 
 if(NOT _tal_host_cc OR NOT _tal_host_cxx)
-    find_program(_tal_host_zig NAMES python-zig zig)
-    if(_tal_host_zig)
-        set(_tal_host_cc "${_tal_cmake_dir}/host-tools/zig-cc")
-        set(_tal_host_cxx "${_tal_cmake_dir}/host-tools/zig-cxx")
-        set(_tal_host_ar "${_tal_cmake_dir}/host-tools/zig-ar")
-        set(_tal_host_ranlib "${_tal_cmake_dir}/host-tools/zig-ranlib")
-    else()
-        message(FATAL_ERROR
-            "No Linux host C/C++ compiler found for QBDI native tools. "
-            "Install gcc/clang, set TAL_HOST_CC and TAL_HOST_CXX, or install zig/python-zig.")
-    endif()
+    message(FATAL_ERROR
+        "No Linux host C/C++ compiler found for QBDI native tools. "
+        "Install gcc/clang or set TAL_HOST_CC and TAL_HOST_CXX.")
 endif()
 
 if(NOT _tal_host_ar)

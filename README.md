@@ -33,7 +33,7 @@ The source dependencies kept as submodules are:
 
 ## Build
 
-The project is configured through CMake presets. Generated files are kept under `build/`, and copied runtime outputs are written to `artifacts/<platform>/`.
+The project is configured through CMake presets. Generated files and build outputs are kept under `build/`.
 
 Android arm64:
 
@@ -63,9 +63,9 @@ cmake --preset windows-vs2022-release
 cmake --build --preset windows-vs2022-release
 ```
 
-## Optional Host Tool Fallback
+## Host Tools
 
-QBDI may build native LLVM table-generation tools while cross-compiling. The default host toolchain lookup uses the local platform compiler first, such as `gcc`, `clang`, or MSVC. Zig is only an optional fallback for environments that do not provide a normal host compiler.
+QBDI may build native LLVM table-generation tools while cross-compiling. Use a normal host compiler, such as `gcc`, `clang`, or MSVC.
 
 For explicit host tool selection:
 

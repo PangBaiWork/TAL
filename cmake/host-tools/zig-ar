@@ -1,8 +1,0 @@
-#!/bin/sh
-if [ -n "${TAL_HOST_ZIG:-}" ]; then
-  exec "$TAL_HOST_ZIG" ar "$@"
-fi
-if command -v python-zig >/dev/null 2>&1; then
-  exec python-zig ar "$@"
-fi
-exec zig ar "$@"

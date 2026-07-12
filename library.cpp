@@ -162,7 +162,7 @@ static void on_enter(GumInvocationContext* context,gpointer user_data) {
     tracer->guest_stack.SaveStack();
     for (const auto &range : tracer->escape_execute) {
         if (range.max==0)continue;
-        LOGI("set resume hook: %llu",range.max);
+        LOGI("set resume hook : %llu",range.max);
         HookUtils::gum_attach(reinterpret_cast<void *>(range.max),
                               on_resume, tracer);
     }
@@ -171,6 +171,7 @@ static void on_enter(GumInvocationContext* context,gpointer user_data) {
 #if defined(__x86_64__) || defined(_M_X64)
     // qvm->setOptions(QBDI::OPT_ENABLE_FS_GS);
 #elif defined(__aarch64__)
+
     int nice_value = -19;  // 最高优先级
     if (setpriority(PRIO_PROCESS, cur_tracer->tid,nice_value ) != 0) {
        LOGE("setpriority failed: tid=%d nice=%d err=%d (%s)",

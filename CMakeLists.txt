@@ -2,8 +2,6 @@ cmake_minimum_required(VERSION 3.22.1)
 
 project(tal LANGUAGES C CXX)
 
-set(TARGET_NAME "tal")
-
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -12,16 +10,12 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
-option(TAL_BUILD_TESTS "Build tal test executable on desktop platforms" OFF)
-option(TAL_COPY_OUTPUT "Copy built library into TAL_OUTPUT_ROOT/<platform>" ON)
+option(TAL_BUILD_TESTS "Build tal test executable on desktop platforms" ON)
 option(TAL_ENABLE_LTO "Enable link-time optimization for tal release builds" OFF)
 option(TAL_STRIP_RELEASE "Strip tal release binaries after linking on ELF/Mach-O targets" ON)
-set(TAL_OUTPUT_ROOT
-    "${CMAKE_CURRENT_SOURCE_DIR}/artifacts"
-    CACHE PATH "Directory for copied tal build outputs")
 
 set(BUILD_TESTING OFF CACHE BOOL "Disable dependency tests" FORCE)
-set(CMAKE_SKIP_INSTALL_RULES ON CACHE BOOL "Skip install metadata for vendored dependencies" FORCE)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build vendored dependencies as static libraries" FORCE)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Android" OR ANDROID)
     set(TAL_PLATFORM "android")
@@ -61,8 +55,8 @@ else()
 endif()
 
 set(TAL_FRIDA_GUM_LIBRARY
-    "${CMAKE_CURRENT_SOURCE_DIR}/libs/frida-gum/${TAL_PLATFORM}/${FRIDA_LIB_NAME}"
-    CACHE FILEPATH "Path to platform frida-gum static library")
+        "${CMAKE_CURRENT_SOURCE_DIR}/libs/frida-gum/${TAL_PLATFORM}/${FRIDA_LIB_NAME}"
+        CACHE FILEPATH "Path to platform frida-gum static library")
 
 if(NOT EXISTS "${TAL_FRIDA_GUM_LIBRARY}")
     message(FATAL_ERROR "frida-gum library not found: ${TAL_FRIDA_GUM_LIBRARY}")
@@ -70,14 +64,13 @@ endif()
 
 add_library(frida-gum STATIC IMPORTED GLOBAL)
 set_target_properties(frida-gum PROPERTIES
-    IMPORTED_LOCATION "${TAL_FRIDA_GUM_LIBRARY}")
+        IMPORTED_LOCATION "${TAL_FRIDA_GUM_LIBRARY}")
 
 set(TAL_BOOST_ROOT
-    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/boost-lite"
-    CACHE PATH "Path to the Boost source tree used by tal")
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/boost-lite"
+        CACHE PATH "Path to the Boost source tree used by tal")
 add_subdirectory("${TAL_BOOST_ROOT}" "${CMAKE_CURRENT_BINARY_DIR}/boost-lite")
 
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build vendored dependencies as static libraries" FORCE)
 set(BUILD_EXAMPLES OFF CACHE BOOL "Disable Triton examples" FORCE)
 set(ENABLE_TEST OFF CACHE BOOL "Disable Triton tests" FORCE)
 set(PYTHON_BINDINGS OFF CACHE BOOL "Disable Triton Python bindings" FORCE)
@@ -86,16 +79,16 @@ set(Z3_INTERFACE OFF CACHE BOOL "Disable Triton Z3 interface" FORCE)
 set(BOOST_INTERFACE OFF CACHE BOOL "Disable Triton Boost interface" FORCE)
 
 set(CAPSTONE_INCLUDE_DIRS
-    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/frida-capstone"
-    CACHE PATH "Frida-bundled Capstone compatibility include directory for Triton" FORCE)
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/frida-capstone"
+        CACHE PATH "Frida-bundled Capstone compatibility include directory for Triton" FORCE)
 set(CAPSTONE_LIBRARIES frida-gum CACHE STRING "Frida-gum provides Capstone symbols for Triton" FORCE)
 set(CAPSTONE_VERSION_HEADER
-    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/${TAL_PLATFORM}/frida/frida-gum.h"
-    CACHE FILEPATH "Frida-bundled Capstone version header for Triton" FORCE)
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/${TAL_PLATFORM}/frida/frida-gum.h"
+        CACHE FILEPATH "Frida-bundled Capstone version header for Triton" FORCE)
 
 add_subdirectory(Triton)
 target_include_directories(triton
-    PRIVATE
+        PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/third_party/${TAL_PLATFORM}/frida")
 target_compile_definitions(triton PRIVATE "${TAL_PLATFORM_DEFINITION}")
 
@@ -113,92 +106,86 @@ set(QBDI_INSTALL OFF CACHE BOOL "Skip unused QBDI install metadata" FORCE)
 add_subdirectory(qbdi-src)
 
 file(GLOB_RECURSE FILE_SOURCES CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cc"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cxx")
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cc"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cxx")
 
-add_library(${TARGET_NAME} SHARED
-    ${FILE_SOURCES}
-    library.cpp)
+add_library(tal_common INTERFACE)
+target_include_directories(tal_common
+        INTERFACE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/${TAL_PLATFORM}/frida"
+        "${CMAKE_CURRENT_SOURCE_DIR}/qbdi-src/include"
+        "${CMAKE_CURRENT_BINARY_DIR}/qbdi-src/include"
+        "${CMAKE_CURRENT_BINARY_DIR}/qbdi-src/include-static"
+        "${CMAKE_CURRENT_SOURCE_DIR}/qbdi-src/src"
+        "${CMAKE_CURRENT_BINARY_DIR}/qbdi-src/src"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Triton/src/libtriton/includes")
+
+target_compile_definitions(tal_common INTERFACE ULTRA_FAST_MODE=1 "${TAL_PLATFORM_DEFINITION}")
+
+target_link_libraries(tal_common
+        INTERFACE
+        frida-gum
+        qbdi-llvm
+        QBDI_static
+        Boost::context
+        triton)
+
+if(MSVC)
+    target_compile_options(tal_common INTERFACE /utf-8)
+else()
+    target_compile_options(tal_common
+            INTERFACE
+            -Wall
+            -Wextra
+            $<$<CONFIG:Release>:-Os>
+            $<$<CONFIG:Release>:-fomit-frame-pointer>
+            $<$<CONFIG:Release>:-fno-stack-protector>
+            $<$<CONFIG:Release>:-ffunction-sections>
+            $<$<CONFIG:Release>:-fdata-sections>
+            $<$<CONFIG:Release>:-fvisibility=hidden>
+            $<$<CONFIG:Release>:-fno-asynchronous-unwind-tables>
+            $<$<CONFIG:Release>:-fno-unwind-tables>)
+
+    target_link_options(tal_common
+            INTERFACE
+            -Wl,--exclude-libs=ALL
+            $<$<CONFIG:Release>:-Wl,--gc-sections>
+            $<$<AND:$<CONFIG:Release>,$<BOOL:${TAL_STRIP_RELEASE}>>:-Wl,--strip-all>)
+
+    if(TAL_ENABLE_LTO)
+        target_compile_options(tal_common INTERFACE $<$<CONFIG:Release>:-flto>)
+        target_link_options(tal_common INTERFACE $<$<CONFIG:Release>:-flto=auto>)
+    endif()
+endif()
+
+if(TAL_PLATFORM STREQUAL "windows")
+    target_compile_definitions(tal_common INTERFACE _HAS_STD_BYTE=0)
+    target_link_libraries(tal_common INTERFACE ntdll.lib)
+endif()
 
 function(tal_configure_library target)
-    target_include_directories(${target}
-        PRIVATE
-            "${CMAKE_CURRENT_SOURCE_DIR}/include"
-            "${CMAKE_CURRENT_SOURCE_DIR}/third_party/${TAL_PLATFORM}/frida"
-            "${CMAKE_CURRENT_SOURCE_DIR}/qbdi-src/src"
-            "${CMAKE_CURRENT_SOURCE_DIR}/Triton/src/libtriton/includes")
-
-    target_compile_definitions(${target} PRIVATE ULTRA_FAST_MODE=1 "${TAL_PLATFORM_DEFINITION}")
-
-    target_link_libraries(${target}
-        PRIVATE
-            frida-gum
-            qbdi-llvm
-            QBDI_static
-            Boost::context
-            triton)
-
-    if(MSVC)
-        target_compile_options(${target} PRIVATE /utf-8)
-        if(TAL_CPU_COUNT)
-            target_compile_options(${target} PRIVATE /MP${TAL_CPU_COUNT})
-        endif()
-    else()
-        target_compile_options(${target}
-            PRIVATE
-                -Wall
-                -Wextra
-                $<$<CONFIG:Release>:-Os>
-                $<$<CONFIG:Release>:-fomit-frame-pointer>
-                $<$<CONFIG:Release>:-fno-stack-protector>
-                $<$<CONFIG:Release>:-ffunction-sections>
-                $<$<CONFIG:Release>:-fdata-sections>
-                $<$<CONFIG:Release>:-fvisibility=hidden>
-                $<$<CONFIG:Release>:-fno-asynchronous-unwind-tables>
-                $<$<CONFIG:Release>:-fno-unwind-tables>)
-
-        target_link_options(${target}
-            PRIVATE
-                -Wl,--exclude-libs=ALL
-                $<$<CONFIG:Release>:-Wl,--gc-sections>
-                $<$<AND:$<CONFIG:Release>,$<BOOL:${TAL_STRIP_RELEASE}>>:-Wl,--strip-all>)
-
-        if(TAL_ENABLE_LTO)
-            target_compile_options(${target} PRIVATE $<$<CONFIG:Release>:-flto>)
-            target_link_options(${target} PRIVATE $<$<CONFIG:Release>:-flto=auto>)
-        endif()
-    endif()
-
-    if(TAL_PLATFORM STREQUAL "windows")
-        target_compile_definitions(${target} PRIVATE _HAS_STD_BYTE=0)
-        target_link_libraries(${target} PRIVATE ntdll.lib)
+    target_link_libraries(${target} PRIVATE tal_common)
+    if(MSVC AND TAL_CPU_COUNT)
+        target_compile_options(${target} PRIVATE /MP${TAL_CPU_COUNT})
     endif()
 endfunction()
 
-tal_configure_library(${TARGET_NAME})
-
-if(TAL_BUILD_TESTS AND NOT TAL_PLATFORM STREQUAL "android")
-    add_library(${TARGET_NAME}_static STATIC
+add_library(tal SHARED
         ${FILE_SOURCES}
         library.cpp)
 
-    tal_configure_library(${TARGET_NAME}_static)
+tal_configure_library(tal)
 
-    add_executable(${TARGET_NAME}_test
-        ${FILE_SOURCES}
-        test/test.cpp)
+if(TAL_BUILD_TESTS AND NOT TAL_PLATFORM STREQUAL "android")
+    add_library(tal_static STATIC
+            ${FILE_SOURCES}
+            library.cpp)
 
-    target_link_libraries(${TARGET_NAME}_test PRIVATE ${TARGET_NAME}_static)
-endif()
+    tal_configure_library(tal_static)
 
-if(TAL_COPY_OUTPUT)
-    add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E make_directory
-                "${TAL_OUTPUT_ROOT}/${TAL_PLATFORM}"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "$<TARGET_FILE:${TARGET_NAME}>"
-                "${TAL_OUTPUT_ROOT}/${TAL_PLATFORM}/$<TARGET_FILE_NAME:${TARGET_NAME}>"
-        VERBATIM)
+    add_executable(tal_test test/test.cpp)
+    target_link_libraries(tal_test PRIVATE tal_static tal_common)
 endif()
