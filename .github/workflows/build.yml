@@ -63,6 +63,7 @@ jobs:
         run: >-
           cmake -S . -B build/ci-windows
           -A x64
+          -DCMAKE_CONFIGURATION_TYPES=Release
           -DTAL_BUILD_TESTS=OFF
 
       - name: Configure Android
