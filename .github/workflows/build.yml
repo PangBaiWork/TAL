@@ -62,7 +62,7 @@ jobs:
         shell: bash
         run: >-
           cmake -S . -B build/ci-windows
-          -G "Visual Studio 17 2022" -A x64
+          -A x64
           -DTAL_BUILD_TESTS=OFF
 
       - name: Configure Android
