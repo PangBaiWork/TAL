@@ -1,0 +1,88 @@
+name: Build dynamic libraries
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x64
+            os: ubuntu-latest
+            platform: linux
+            library: build/ci-linux/libtal.so
+            artifact: tal-linux-x64
+            lfs: libs/frida-gum/linux/libfrida-gum.a
+          - name: Windows x64
+            os: windows-latest
+            platform: windows
+            library: build/ci-windows/Release/tal.dll
+            artifact: tal-windows-x64
+            lfs: libs/frida-gum/windows/frida-gum.lib
+          - name: Android arm64-v8a
+            os: ubuntu-latest
+            platform: android
+            library: build/ci-android/libtal.so
+            artifact: tal-android-arm64-v8a
+            lfs: libs/frida-gum/android/libfrida-gum.a
+
+    steps:
+      - name: Check out TAL
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          lfs: false
+          submodules: false
+
+      - name: Fetch build dependencies
+        shell: bash
+        run: |
+          git config submodule.Triton.url https://github.com/JonathanSalwan/Triton.git
+          git submodule update --init --depth 1 Triton qbdi-src
+          git lfs pull --include="${{ matrix.lfs }}" --exclude=""
+
+      - name: Configure Linux
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: >-
+          cmake -S . -B build/ci-linux -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DTAL_BUILD_TESTS=OFF
+
+      - name: Configure Windows
+        if: matrix.platform == 'windows'
+        shell: bash
+        run: >-
+          cmake -S . -B build/ci-windows
+          -G "Visual Studio 17 2022" -A x64
+          -DTAL_BUILD_TESTS=OFF
+
+      - name: Configure Android
+        if: matrix.platform == 'android'
+        shell: bash
+        run: >-
+          cmake -S . -B build/ci-android -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_LATEST_HOME/build/cmake/android.toolchain.cmake"
+          -DANDROID_ABI=arm64-v8a
+          -DANDROID_PLATFORM=android-24
+          -DTAL_BUILD_TESTS=OFF
+
+      - name: Build dynamic library
+        shell: bash
+        run: cmake --build "build/ci-${{ matrix.platform }}" --config Release --target tal --parallel
+
+      - name: Upload dynamic library
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.library }}
+          if-no-files-found: error
