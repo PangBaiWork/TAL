@@ -135,7 +135,7 @@ class Trace {
             Cr_idx = -1, Cw_idx = -1, Crw_idx = -1;
         }
         static bool IsValid(const int input) { return input >= 0; }
-        void SetReg(int reg, RegAccess access);
+        void SetReg(int reg, QBDI::RegisterAccessType access);
         void PrintReg(std::ofstream &log, const QBDI::GPRState *gpr,
                       bool before) const;
     };

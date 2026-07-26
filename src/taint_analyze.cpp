@@ -62,21 +62,7 @@ QBDI::VMAction TaintTrace::InstTrace(QBDI::VM *vm,QBDI::GPRState *gpr, QBDI::FPR
     anal.reset();
     for(int idx = 0;idx < inst->numOperands;idx++){
         QBDI::OperandAnalysis &operand =  inst->operands[idx];
-        switch (operand.regAccess) {
-            case QBDI::REGISTER_WRITE:
-                anal.SetReg(operand.regCtxIdx,WRITE);
-                break;
-            case QBDI::REGISTER_READ:
-                anal.SetReg(operand.regCtxIdx,READ);
-                break;
-            case QBDI::REGISTER_READ_WRITE:
-                anal.SetReg(operand.regCtxIdx,READ_WRITE);
-                break;
-
-            case QBDI::REGISTER_UNUSED:
-                // assert(false);
-                break;
-        }
+        anal.SetReg(operand.regCtxIdx, operand.regAccess);
     }
     int Tr_idx=anal.Tr_idx,Tw_idx=anal.Tw_idx,Trw_idx=anal.Trw_idx;
     int Cr_idx=anal.Cr_idx,Cw_idx=anal.Cw_idx,Crw_idx=anal.Crw_idx;
@@ -169,10 +155,7 @@ void TaintTrace::PostInstTrace(QBDI::VM *vm,QBDI::GPRState *gpr, QBDI::FPRState 
     // if(needFlush()) log.flush();
 }
 void TaintTrace::MemoryTrace(QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRState *fpr) {
-    int taint_r[4] = { -1,-1,-1},taint_w[4] = {-1,-1,-1};
-    int taint_rw = -1,clear_rw = -1;
-    int clear_r[4] = { -1,-1,-1},clear_w[4] = {-1,-1,-1};
-    int taint_r_idx = -1,taint_w_idx = -1,clear_r_idx = -1,clear_w_idx = -1;
+    RegAnalysis analysis(this);
 
 
     const QBDI::InstAnalysis *inst = vm->getInstAnalysis(
@@ -192,24 +175,8 @@ void TaintTrace::MemoryTrace(QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRState *
                 (operand.regName[0]=='G'&&operand.regName[1]=='S')) {
                 return;
                 }
-        } else if(operand.regAccess == QBDI::REGISTER_READ ){
-            if (IsTaint(operand.regCtxIdx)){
-                taint_r[++taint_r_idx] = operand.regCtxIdx;
-            } else {
-                clear_r[++clear_r_idx] = operand.regCtxIdx;
-            }
-        }else if (operand.regAccess == QBDI::REGISTER_WRITE ){
-            if (IsTaint(operand.regCtxIdx)){
-                taint_w[++taint_w_idx] = operand.regCtxIdx;
-            } else {
-                clear_w[++clear_w_idx] = operand.regCtxIdx;
-            }
-        }else if (operand.regAccess == QBDI::REGISTER_READ_WRITE){
-            if (IsTaint(operand.regCtxIdx)){
-                taint_rw = operand.regCtxIdx;
-            } else {
-                clear_rw = operand.regCtxIdx;
-            }
+        } else {
+            analysis.SetReg(operand.regCtxIdx, operand.regAccess);
         }
     }
 
@@ -262,22 +229,27 @@ void TaintTrace::MemoryTrace(QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRState *
                     // ldp x1, x2, *[mem]
                     // ldp x1, *x2, *[mem]
                     // mov eax, dword ptr [rbp - 0x18]
-                    if (IsValid(clear_w_idx)||IsValid(taint_w_idx)){
-                        while (IsValid(clear_w_idx)) {
-                            PrintMemoryOp(gpr,offset,&access,clear_w[clear_w_idx],-1);
-                            SetTaintReg(clear_w[clear_w_idx--],0);
+                    if (IsValid(analysis.Cw_idx)||IsValid(analysis.Tw_idx)){
+                        while (IsValid(analysis.Cw_idx)) {
+                            PrintMemoryOp(gpr,offset,&access,
+                                          analysis.Cw[analysis.Cw_idx],-1);
+                            SetTaintReg(analysis.Cw[analysis.Cw_idx--],0);
                         }
-                        while (IsValid(taint_w_idx)) {
-                            PrintMemoryOp(gpr, offset, &access, taint_w[taint_w_idx], -1);
-                            SetTaintReg(taint_w[taint_w_idx--], 0);
+                        while (IsValid(analysis.Tw_idx)) {
+                            PrintMemoryOp(gpr, offset, &access,
+                                          analysis.Tw[analysis.Tw_idx], -1);
+                            SetTaintReg(analysis.Tw[analysis.Tw_idx--], 0);
                         }
-                    } else if(IsValid(clear_rw)||IsValid(taint_rw)){
+                    } else if(IsValid(analysis.Crw_idx)||
+                              IsValid(analysis.Trw_idx)){
 
                         /*      XOR REG, *[MEM]
                                 ADD REG, *[MEM]
                                 SUB REG, *[MEM]
                                 XOR *REG, [MEM]*/
-                        int rw = IsValid(clear_rw)?clear_rw:taint_rw;
+                        int rw = IsValid(analysis.Crw_idx)
+                                     ? analysis.Crw[analysis.Crw_idx]
+                                     : analysis.Trw[analysis.Trw_idx];
                         SetTaintReg(rw,0);
                         if (IsAddrMode()||IsDebugMode()) log << PRINT_OFFSET(offset);
                         log << MOV<< RegName(rw) << ", "<< ToHex(UNKNOWN_CONST) <<ENTER;
@@ -295,19 +267,20 @@ void TaintTrace::MemoryTrace(QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRState *
                     };
                 } else {
 
-                    if (!IsValid(taint_r_idx)&&IsValid(taint_w_idx)) {
+                    if (!IsValid(analysis.Tr_idx)&&
+                        IsValid(analysis.Tw_idx)) {
                         // ldp *x1, *x2, [reg]
                         // MOV *RAX, [MEM]
-                        while (IsValid(taint_w_idx))
-                            ClearTaintReg(taint_w[taint_w_idx--]);
-                    } else if (IsValid(taint_r_idx)){
-                        if (IsValid(clear_w_idx)) {
+                        while (IsValid(analysis.Tw_idx))
+                            ClearTaintReg(analysis.Tw[analysis.Tw_idx--]);
+                    } else if (IsValid(analysis.Tr_idx)){
+                        if (IsValid(analysis.Cw_idx)) {
                             // MOV RAX,[*RDX]
                             // ldp x1, x2, [*reg] (print by InstTrace)
-                            while (IsValid(clear_w_idx))
-                                SetTaintReg(clear_w[clear_w_idx--],0);
-                        } else if (IsValid(clear_rw)) {
-                            SetTaintReg(clear_rw,0);
+                            while (IsValid(analysis.Cw_idx))
+                                SetTaintReg(analysis.Cw[analysis.Cw_idx--],0);
+                        } else if (IsValid(analysis.Crw_idx)) {
+                            SetTaintReg(analysis.Crw[analysis.Crw_idx],0);
                         }
                     }
                 }
@@ -318,10 +291,12 @@ void TaintTrace::MemoryTrace(QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRState *
              * PUSH REG
              * stp *x1 *x2 ,[mem]
              **/
-            if(IsValid(taint_r_idx)){
+            if(IsValid(analysis.Tr_idx)){
                 // todo: str x1, [x2,x3]
-                while (IsValid(taint_r_idx)&&taint_r[taint_r_idx])
-                    PrintMemoryOp(gpr, offset, &access, -1, taint_r[taint_r_idx--]);
+                while (IsValid(analysis.Tr_idx)) {
+                    PrintMemoryOp(gpr, offset, &access, -1,
+                                  analysis.Tr[analysis.Tr_idx--]);
+                }
                 // question: is stp case access.size = 16 ?
                 AddTaintMemory(access.accessAddress, access.size);
                 if (IsDebugMode())
@@ -351,14 +326,14 @@ void TaintTrace::MemoryTrace(QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRState *
              **/
             // only x86 sure ?
             const auto range = memory.find(access.accessAddress);
-            if (!range && !IsValid(taint_r_idx)) return;
+            if (!range && !IsValid(analysis.Tr_idx)) return;
 
-            if (range && !IsValid(taint_r_idx)) {
+            if (range && !IsValid(analysis.Tr_idx)) {
               // XOR *[MEM], REG
               if (IsAddrMode() || IsDebugMode()) log << PRINT_OFFSET(offset);
-              log << MOV << RegName(clear_r[0]) << ", "
-                  <<  PRINT_GPR(clear_r[0]) << ENTER;
-            } else if (!range && IsValid(taint_r_idx)) {
+              log << MOV << RegName(analysis.Cr[0]) << ", "
+                  <<  PRINT_GPR(analysis.Cr[0]) << ENTER;
+            } else if (!range && IsValid(analysis.Tr_idx)) {
               // XOR [MEM], *REG
               AddTaintMemory(access.accessAddress, access.size);
             }
@@ -366,7 +341,9 @@ void TaintTrace::MemoryTrace(QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRState *
             if (IsAddrMode()||IsDebugMode()) log_str2 << PRINT_OFFSET(offset);
             log_str2 << TAB << disassembler.AnalyzeInst(inst->address)->mnemonic << SPACE;
             log_str2 << PRINT_ADDR(access.accessAddress) << ", "
-            <<  RegName(IsValid(taint_r_idx)?taint_r[0]:clear_r[0]) ;
+            <<  RegName(IsValid(analysis.Tr_idx)
+                            ? analysis.Tr[0]
+                            : analysis.Cr[0]) ;
             log << std::left << std::setw(STR_ALIGN) << log_str2.str();
             log << SPLIT <<  PRINT_ADDR(access.accessAddress) << EQ <<ToHex(access.value);
             log << PRINT_SIZE(access.size);

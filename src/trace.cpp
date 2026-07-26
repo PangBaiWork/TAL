@@ -37,20 +37,7 @@ QBDI::VMAction Trace::InstTrace(QBDI::VM *vm, QBDI::GPRState *gpr,
     anal.reset();
     for(int idx = 0;idx < inst->numOperands;idx++){
         QBDI::OperandAnalysis &operand =  inst->operands[idx];
-        switch (operand.regAccess) {
-            case QBDI::REGISTER_WRITE:
-                anal.SetReg(operand.regCtxIdx,WRITE);
-                break;
-            case QBDI::REGISTER_READ:
-                anal.SetReg(operand.regCtxIdx,READ);
-                break;
-            case QBDI::REGISTER_READ_WRITE:
-                anal.SetReg(operand.regCtxIdx,READ_WRITE);
-                break;
-            case QBDI::REGISTER_UNUSED:
-                // assert(false);
-                break;
-        }
+        anal.SetReg(operand.regCtxIdx, operand.regAccess);
     }
 
     log << ENTER;
@@ -339,29 +326,31 @@ bool Trace::CheckTaintedStr(const uint64_t addr,std::ofstream& log) {
     }
     return false;
 }
-void Trace::RegAnalysis::SetReg(int reg, RegAccess access) {
+void Trace::RegAnalysis::SetReg(int reg, QBDI::RegisterAccessType access) {
     if (!IsValid(reg) || reg >= std::size(QBDI::GPR_NAMES)) return;
     switch (access) {
-        case READ:
+        case QBDI::REGISTER_READ:
             if (tracer->IsTaint(reg)) {
                 Tr[++Tr_idx] = reg;
             } else {
                 Cr[++Cr_idx] = reg;
             }
             break;
-        case WRITE:
+        case QBDI::REGISTER_WRITE:
             if (tracer->IsTaint(reg)) {
                 Tw[++Tw_idx] = reg;
             } else {
                 Cw[++Cw_idx] = reg;
             }
             break;
-        case READ_WRITE:
+        case QBDI::REGISTER_READ_WRITE:
             if (tracer->IsTaint(reg)) {
                 Trw[++Trw_idx] = reg;
             } else {
                 Crw[++Crw_idx] = reg;
             }
+            break;
+        case QBDI::REGISTER_UNUSED:
             break;
     }
 }

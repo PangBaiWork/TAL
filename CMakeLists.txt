@@ -179,13 +179,19 @@ add_library(tal SHARED
 
 tal_configure_library(tal)
 
-if(TAL_BUILD_TESTS AND NOT TAL_PLATFORM STREQUAL "android")
+if(TAL_BUILD_TESTS)
     add_library(tal_static STATIC
             ${FILE_SOURCES}
             library.cpp)
 
     tal_configure_library(tal_static)
 
-    add_executable(tal_test test/test.cpp)
-    target_link_libraries(tal_test PRIVATE tal_static tal_common)
+    if(NOT TAL_PLATFORM STREQUAL "android")
+        enable_testing()
+
+        add_executable(tal_test test/test.cpp)
+        target_link_libraries(tal_test PRIVATE tal_static tal_common)
+    endif()
+
+    add_subdirectory(test/part)
 endif()

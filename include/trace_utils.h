@@ -172,7 +172,6 @@ inline std::unordered_map<PrintMode, std::string> ModeName = {
     {ADDR_MODE, "addr"},   {BIN_MODE, "bin"},       {DEBUG_MODE, "debug"},
     {TRACE_MODE, "trace"}, {TRITON_MODE, "triton"},{TRACE_ARGS_MODE,"trace_args"}
 };
-enum RegAccess { WRITE, READ, READ_WRITE };
 enum InstOprandType {
     NONE,
     CALL,

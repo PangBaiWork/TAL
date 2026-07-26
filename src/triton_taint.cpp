@@ -84,20 +84,7 @@ QBDI::VMAction TritonTaint::InstTrace(QBDI::VM *vm,QBDI::GPRState *gpr, QBDI::FP
     anal.reset();
     for(int idx = 0;idx < inst->numOperands;idx++){
         QBDI::OperandAnalysis &operand =  inst->operands[idx];
-        switch (operand.regAccess) {
-            case QBDI::REGISTER_WRITE:
-                anal.SetReg(operand.regCtxIdx,WRITE);
-                break;
-            case QBDI::REGISTER_READ:
-                anal.SetReg(operand.regCtxIdx,READ);
-                break;
-            case QBDI::REGISTER_READ_WRITE:
-                anal.SetReg(operand.regCtxIdx,READ_WRITE);
-                break;
-            case QBDI::REGISTER_UNUSED:
-                // assert(false);
-                break;
-        }
+        anal.SetReg(operand.regCtxIdx, operand.regAccess);
     }
 
 
@@ -215,5 +202,4 @@ bool TritonTaint::Process(triton::arch::Instruction &inst) {
 
     return inst.isTainted();
  }
-
 
