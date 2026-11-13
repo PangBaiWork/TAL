@@ -128,14 +128,27 @@ class Trace {
         Trace *tracer;
         int Tr[4] = {}, Tw[4] = {}, Trw[2] = {}, Cr[4] = {}, Cw[4] = {},
             Crw[2] = {};
+        // Registers used only to compute a memory address (QBDI marks them
+        // with OPERANDFLAG_ADDR). They are not data operands.
+        int Ar[4] = {};
         int Tr_idx = -1, Tw_idx = -1, Trw_idx = -1, Cr_idx = -1, Cw_idx = -1,
-            Crw_idx = -1;
+            Crw_idx = -1, Ar_idx = -1;
         void reset() {
             Tr_idx = -1, Tw_idx = -1, Trw_idx = -1;
             Cr_idx = -1, Cw_idx = -1, Crw_idx = -1;
+            Ar_idx = -1;
         }
         static bool IsValid(const int input) { return input >= 0; }
-        void SetReg(int reg, QBDI::RegisterAccessType access);
+        // A tainted address register means the address itself is tainted;
+        // it counts as a tainted read for propagation decisions only.
+        bool HasTaintedAddrReg() const {
+            for (int i = 0; i <= Ar_idx; ++i) {
+                if (tracer->IsTaint(Ar[i])) return true;
+            }
+            return false;
+        }
+        void SetReg(int reg, QBDI::RegisterAccessType access,
+                    QBDI::OperandFlag flag = QBDI::OPERANDFLAG_NONE);
         void PrintReg(std::ofstream &log, const QBDI::GPRState *gpr,
                       bool before) const;
     };

@@ -62,22 +62,26 @@ QBDI::VMAction TaintTrace::InstTrace(QBDI::VM *vm,QBDI::GPRState *gpr, QBDI::FPR
     anal.reset();
     for(int idx = 0;idx < inst->numOperands;idx++){
         QBDI::OperandAnalysis &operand =  inst->operands[idx];
-        anal.SetReg(operand.regCtxIdx, operand.regAccess);
+        anal.SetReg(operand.regCtxIdx, operand.regAccess, operand.flag);
     }
     int Tr_idx=anal.Tr_idx,Tw_idx=anal.Tw_idx,Trw_idx=anal.Trw_idx;
     int Cr_idx=anal.Cr_idx,Cw_idx=anal.Cw_idx,Crw_idx=anal.Crw_idx;
+    // A tainted address register counts as a tainted read for propagation
+    // decisions, but it is never a data source.
+    const bool has_tainted_read =
+        IsValid(Tr_idx) || anal.HasTaintedAddrReg();
 
     // trace
     AnalysisInstType(inst);
 
     // taint process
-    if (!IsValid(Tr_idx) && !IsValid(Tw_idx)&&!IsValid(Trw_idx)){
+    if (!has_tainted_read && !IsValid(Tw_idx)&&!IsValid(Trw_idx)){
         return QBDI::CONTINUE;
     }
     if (!IsValid(Trw_idx)&&!IsValid(Crw_idx)){
         // no rwReg
 
-        if (IsValid(Tr_idx) && !IsValid(Tw_idx)){
+        if (has_tainted_read && !IsValid(Tw_idx)){
             if (IsValid(Cw_idx)){
                 // ldr x0, [*reg]
                 // ldp x0, x1, [*reg]
@@ -88,7 +92,7 @@ QBDI::VMAction TaintTrace::InstTrace(QBDI::VM *vm,QBDI::GPRState *gpr, QBDI::FPR
                 // mov	[mem], *rax
                 if (!inst->isCompare) return QBDI::CONTINUE;
             }
-        } else if (!IsValid(Tr_idx) && IsValid(Tw_idx)){
+        } else if (!has_tainted_read && IsValid(Tw_idx)){
             while (IsValid(Tw_idx))
                 ClearTaintReg(anal.Tw[Tw_idx--]);
 
@@ -108,7 +112,7 @@ QBDI::VMAction TaintTrace::InstTrace(QBDI::VM *vm,QBDI::GPRState *gpr, QBDI::FPR
                     return QBDI::CONTINUE;
                 }
                 //  XOR  REG,*REG
-                if(IsValid(Tr_idx)){
+                if (has_tainted_read) {
                     SetTaintReg(anal.Crw[0],0);
                 }
 
@@ -176,9 +180,14 @@ void TaintTrace::MemoryTrace(QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRState *
                 return;
                 }
         } else {
-            analysis.SetReg(operand.regCtxIdx, operand.regAccess);
+            analysis.SetReg(operand.regCtxIdx, operand.regAccess,
+                            operand.flag);
         }
     }
+    // A tainted address register counts as a tainted read for propagation
+    // decisions, but it is never a data source.
+    const bool has_tainted_read =
+        IsValid(analysis.Tr_idx) || analysis.HasTaintedAddrReg();
 
     char flag = 0;
     QBDI::MemoryAccess* access_p=nullptr;
@@ -267,13 +276,13 @@ void TaintTrace::MemoryTrace(QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRState *
                     };
                 } else {
 
-                    if (!IsValid(analysis.Tr_idx)&&
+                    if (!has_tainted_read &&
                         IsValid(analysis.Tw_idx)) {
                         // ldp *x1, *x2, [reg]
                         // MOV *RAX, [MEM]
                         while (IsValid(analysis.Tw_idx))
                             ClearTaintReg(analysis.Tw[analysis.Tw_idx--]);
-                    } else if (IsValid(analysis.Tr_idx)){
+                    } else if (has_tainted_read) {
                         if (IsValid(analysis.Cw_idx)) {
                             // MOV RAX,[*RDX]
                             // ldp x1, x2, [*reg] (print by InstTrace)
@@ -291,7 +300,7 @@ void TaintTrace::MemoryTrace(QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRState *
              * PUSH REG
              * stp *x1 *x2 ,[mem]
              **/
-            if(IsValid(analysis.Tr_idx)){
+            if (has_tainted_read) {
                 // todo: str x1, [x2,x3]
                 while (IsValid(analysis.Tr_idx)) {
                     PrintMemoryOp(gpr, offset, &access, -1,
@@ -326,24 +335,34 @@ void TaintTrace::MemoryTrace(QBDI::VM *vm, QBDI::GPRState *gpr, QBDI::FPRState *
              **/
             // only x86 sure ?
             const auto range = memory.find(access.accessAddress);
-            if (!range && !IsValid(analysis.Tr_idx)) return;
+            if (!range && !has_tainted_read) return;
 
-            if (range && !IsValid(analysis.Tr_idx)) {
+            if (range && !has_tainted_read) {
               // XOR *[MEM], REG
-              if (IsAddrMode() || IsDebugMode()) log << PRINT_OFFSET(offset);
-              log << MOV << RegName(analysis.Cr[0]) << ", "
-                  <<  PRINT_GPR(analysis.Cr[0]) << ENTER;
-            } else if (!range && IsValid(analysis.Tr_idx)) {
+              // The source register is a data register: address registers
+              // (base/index) are kept out of Cr, so Cr[0] is the source.
+              // The source value is auxiliary info, not an instruction, so
+              // print it as a comment instead of a mov line.
+              if (IsValid(analysis.Cr_idx)) {
+                log << TAB << "; src " << RegName(analysis.Cr[0]) << " = "
+                    << PRINT_GPR(analysis.Cr[0]) << ENTER;
+              }
+            } else if (!range && has_tainted_read) {
               // XOR [MEM], *REG
               AddTaintMemory(access.accessAddress, access.size);
             }
             std::ostringstream log_str2;
             if (IsAddrMode()||IsDebugMode()) log_str2 << PRINT_OFFSET(offset);
             log_str2 << TAB << disassembler.AnalyzeInst(inst->address)->mnemonic << SPACE;
-            log_str2 << PRINT_ADDR(access.accessAddress) << ", "
-            <<  RegName(IsValid(analysis.Tr_idx)
-                            ? analysis.Tr[0]
-                            : analysis.Cr[0]) ;
+            log_str2 << PRINT_ADDR(access.accessAddress) << ", ";
+            if (IsValid(analysis.Tr_idx)) {
+              log_str2 << RegName(analysis.Tr[0]);
+            } else if (IsValid(analysis.Cr_idx)) {
+              log_str2 << RegName(analysis.Cr[0]);
+            } else {
+              // xor [mem], imm: there is no source register.
+              log_str2 << "imm";
+            }
             log << std::left << std::setw(STR_ALIGN) << log_str2.str();
             log << SPLIT <<  PRINT_ADDR(access.accessAddress) << EQ <<ToHex(access.value);
             log << PRINT_SIZE(access.size);

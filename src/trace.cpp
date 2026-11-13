@@ -37,7 +37,7 @@ QBDI::VMAction Trace::InstTrace(QBDI::VM *vm, QBDI::GPRState *gpr,
     anal.reset();
     for(int idx = 0;idx < inst->numOperands;idx++){
         QBDI::OperandAnalysis &operand =  inst->operands[idx];
-        anal.SetReg(operand.regCtxIdx, operand.regAccess);
+        anal.SetReg(operand.regCtxIdx, operand.regAccess, operand.flag);
     }
 
     log << ENTER;
@@ -326,8 +326,15 @@ bool Trace::CheckTaintedStr(const uint64_t addr,std::ofstream& log) {
     }
     return false;
 }
-void Trace::RegAnalysis::SetReg(int reg, QBDI::RegisterAccessType access) {
+void Trace::RegAnalysis::SetReg(int reg, QBDI::RegisterAccessType access,
+                                QBDI::OperandFlag flag) {
     if (!IsValid(reg) || reg >= std::size(QBDI::GPR_NAMES)) return;
+    // Address registers (base/index) only compute the memory address; they
+    // are not data operands, so keep them out of the Tr/Cr/... sets.
+    if ((flag & QBDI::OPERANDFLAG_ADDR) != QBDI::OPERANDFLAG_NONE) {
+        Ar[++Ar_idx] = reg;
+        return;
+    }
     switch (access) {
         case QBDI::REGISTER_READ:
             if (tracer->IsTaint(reg)) {

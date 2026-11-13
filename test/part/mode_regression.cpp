@@ -52,16 +52,27 @@ extern "C" TAL_TEST_EXPORT TAL_TEST_NOINLINE std::uint64_t ModeRegressionMemory(
     std::uint64_t* source, std::uint64_t* target) {
     std::uint64_t result = 0;
 #if defined(__x86_64__) && !defined(_MSC_VER)
+    // Scratch slot for the xor-[mem],-reg case: buf[1] receives the tainted
+    // value, then `xor [r9+rdx*8], rax` xors it back. The log must name RAX
+    // (the data source), not R9/RDX (the address registers).
+    std::uint64_t buf[2] = {0, 0};
     asm volatile(
         "mov (%[source]), %%r8\n\t"
         "mov %%r8, (%[target])\n\t"
         "movabs $0x0102030405060708, %%r9\n\t"
         "xor %%r9, %%r8\n\t"
         "mov %%r8, (%[target])\n\t"
+        "mov %%r8, 8(%[buf])\n\t"
+        "mov %[buf], %%r9\n\t"
+        "mov $1, %%rdx\n\t"
+        "movabs $0x0102030405060708, %%rax\n\t"
+        "xor %%rax, (%%r9,%%rdx,8)\n\t"
         "mov %%r8, %%rax\n\t"
         : "=a"(result)
-        : [source] "r"(source), [target] "r"(target)
-        : "r8", "r9", "memory", "cc");
+        : [source] "r"(source), [target] "r"(target), [buf] "r"(buf)
+        : "r8", "r9", "rdx", "memory", "cc");
+    // (source ^ kMask) ^ kMask must equal *source.
+    if (buf[1] != *source) return 0;
 #elif defined(__aarch64__)
     asm volatile(
         "ldr x8, [%[source]]\n\t"
@@ -297,6 +308,39 @@ bool CheckArchitectureLayout(std::string_view log, std::string& reason) {
     return true;
 }
 
+// The xor-[mem],-reg case in ModeRegressionMemory must log the data source
+// register (RAX), not the address registers (R9/RDX). Only the READ_WRITE
+// xor line is checked: R9 is legitimately used as a data register elsewhere
+// in the same function, so a global ban on R9 would be wrong.
+bool CheckMemXorSource(std::string_view log, std::string& reason) {
+    std::size_t begin = 0;
+    bool found_xor = false;
+    while (begin < log.size()) {
+        const std::size_t end = log.find('\n', begin);
+        const std::string_view line = log.substr(begin, end - begin);
+        begin = end == std::string_view::npos ? log.size() : end + 1;
+        if (line.find("xor [") == std::string_view::npos) continue;
+        found_xor = true;
+        if (line.find(", RAX") == std::string_view::npos) {
+            reason = "xor [mem] line does not name RAX as the source register";
+            return false;
+        }
+        if (line.find(", R9") != std::string_view::npos) {
+            reason = "xor [mem] line names address register R9 as the source";
+            return false;
+        }
+    }
+    if (!found_xor) {
+        reason = "ADDR log is missing the xor [mem] line";
+        return false;
+    }
+    if (log.find("; src RAX = 0x102030405060708") == std::string_view::npos) {
+        reason = "ADDR log is missing the '; src RAX = <mask>' annotation";
+        return false;
+    }
+    return true;
+}
+
 bool CheckLog(const ModeCase& mode, std::string_view log, std::string& reason) {
     if (log.empty()) {
         reason = "log is empty";
@@ -310,6 +354,9 @@ bool CheckLog(const ModeCase& mode, std::string_view log, std::string& reason) {
         case ADDR_MODE:
             if (log.find("0x1122334455667788") == std::string_view::npos) {
                 reason = "ADDR log is missing tainted memory propagation";
+                return false;
+            }
+            if (!CheckMemXorSource(log, reason)) {
                 return false;
             }
             return CheckArchitectureLayout(log, reason);

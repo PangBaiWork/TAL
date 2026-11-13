@@ -84,7 +84,7 @@ QBDI::VMAction TritonTaint::InstTrace(QBDI::VM *vm,QBDI::GPRState *gpr, QBDI::FP
     anal.reset();
     for(int idx = 0;idx < inst->numOperands;idx++){
         QBDI::OperandAnalysis &operand =  inst->operands[idx];
-        anal.SetReg(operand.regCtxIdx, operand.regAccess);
+        anal.SetReg(operand.regCtxIdx, operand.regAccess, operand.flag);
     }
 
 
